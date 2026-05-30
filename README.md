@@ -6,6 +6,7 @@ CLI tool for generating `.freqpack` English learning courses with TTS.
 
 - **Dual TTS engines**: Kokoro-ONNX (default, best English quality) + Piper
 - **Word-level timestamps**: each sentence has per-word timing for word-by-word replay
+- **Pause detection**: automatically detects silence regions ≥ 100ms per sentence
 - **Single command**: auto-detects file import vs text-to-speech
 - **Batch import**: one sentence per line, outputs `.freqpack` zip
 
@@ -65,7 +66,7 @@ Requires separate model download. See [piper-models](https://github.com/rmcpteam
 output/
 ├── sentences.freqpack      # zip archive
 └── sentences/              # unpacked (also created during generation)
-│   ├── course.json         # sentences + word timestamps
+│   ├── course.json         # sentences + word timestamps + pauses
 │   ├── meta.json           # title, language, engine, voice
 │   └── audio/              # one .wav per sentence
 ```
@@ -87,11 +88,20 @@ output/
         { "word": "Kamakura", "start": 0.0, "end": 0.45 },
         { "word": "Store", "start": 0.45, "end": 0.72 },
         ...
+      ],
+      "pauses": [
+        { "start_s": 1.04, "end_s": 1.22 },
+        ...
       ]
     }
   ]
 }
 ```
+
+Each sentence includes:
+
+- **`words`**: word-level timestamps for word-by-word replay and highlighting
+- **`pauses`**: silence regions ≥ 100ms detected via RMS energy analysis (20ms window, 8% median threshold). Useful for segmenting long sentences into practice chunks.
 
 ## Architecture
 
