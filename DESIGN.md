@@ -11,7 +11,7 @@ Status: DRAFT
 - 输入文本 → TTS 生成音频 + course.json → 打包 .freqpack
 - 支持 Kokoro-ONNX + Piper 双引擎，可扩展
 - 批量导入（文本文件每行一句）
-- 音频按句子分割，长句含词级时间节点（断句/停顿标记）
+- 音频按句子分割，含词级时间戳（跟读/断句用）
 
 ---
 
@@ -30,14 +30,20 @@ class TTSEngine(ABC):
         ...
 
     @abstractmethod
-    def generate_with_timestamps(self, text: str, voice: str, output_path: Path) -> GenerationResultWithTimestamps:
-        """生成音频 + 词级时间戳（长句断句用）"""
+    def generate_with_timestamps(self, text: str, voice: str, output_path: Path) -> SentenceResult:
+        """生成音频 + 词级时间戳"""
         ...
 ```
 
 ### 数据结构
 
 ```python
+@dataclass
+class GenerationResult:
+    audio_path: Path
+    duration_s: float
+    sample_rate: int = 24000
+
 @dataclass
 class WordTimestamp:
     word: str
@@ -49,17 +55,8 @@ class SentenceResult:
     text: str
     audio_path: Path
     duration_s: float
-    words: list[WordTimestamp]   # 词级时间戳，含标点停顿
-
-@dataclass
-class GenerationResult:
-    audio_path: Path
-    duration_s: float
-    sample_rate: int
-
-@dataclass
-class GenerationResultWithTimestamps:
-    sentences: list[SentenceResult]
+    sample_rate: int = 24000
+    words: list[WordTimestamp] | None = None   # 词级时间戳
 ```
 
 ---
@@ -67,111 +64,106 @@ class GenerationResultWithTimestamps:
 ## 3. CLI 接口
 
 ```bash
-# 单句测试
-freqgen speak "Hello world" --voice af_sarah --engine kokoro
+# 批量导入：文本文件 → output/{name}.freqpack
+freqgen sentences.txt                          # → output/sentences.freqpack
+freqgen sentences.txt -o my.freqpack           # 指定输出路径
+freqgen sentences.txt -e piper -v en_US-lessac-medium   # Piper 引擎
 
-# 批量导入
-freqgen import sentences.txt --engine kokoro --voice af_sarah --output ./my-course
+# 单句朗读：文本 → stdout.wav 或指定文件
+freqgen "Hello world"                         # → stdout.wav
+freqgen "Hello" -o hello.wav                  # → hello.wav
+freqgen "Hello" -v am_adam                   # 指定音色
 
-# 查看可用声音
-freqgen voices --engine kokoro
+# 查看可用音色
+freqgen voices                                # Kokoro 音色（默认）
+freqgen voices -e piper                       # Piper 音色（需先安装模型）
 
-# 打包 .freqpack
-freqgen pack ./my-course -o my-course.freqpack
+# 参数
+# -o, --output   输出路径
+# -v, --voice    音色名称
+# -e, --engine   引擎 kokoro / piper
 ```
 
 ### 批量格式
 
-`sentences.txt` 每行一句纯文本。
+`sentences.txt` 每行一句纯文本。长段落（多句合并在一行）会自动按句子边界拆分。
+
+### 输出位置
+
+生成的文件统一输出到 `output/` 目录：
+```
+output/
+├── sentences.freqpack        # zip 包
+└── sentences/                # 解压目录（含 course.json + audio/）
+    ├── course.json
+    ├── meta.json
+    └── audio/
+        ├── sent_0000.wav
+        ├── sent_0001.wav
+        └── ...
+```
 
 ---
 
-## 4. 断句方案（核心需求）
+## 4. 时间戳方案
 
-### 时间戳来源
+### 方案：espeak-ng 音素计数 + 声学时长估算
 
-TTS 本身不输出时间戳，需要额外手段获取词级边界：
+Kokoro 的 `generate_with_timestamps` 内部：
+1. 用 espeak-ng `--ipa -q -x` 对每个词查询真实 phoneme group 数量
+2. 统计整句总 phoneme group 数
+3. 按各词 phoneme 占比分配该词在音频中的时长比例
+4. 与 Kokoro 生成的实际音频时长同步
 
-| 方案 | 工具 | 精度 | 依赖 |
-|------|------|------|------|
-| espeak-ng 音素对齐 | Kokoro 内置 g2p，espeak-ng 可估算音素时长 | 音节级 | espeak-ng |
-| montreal-forced-aligner | MFA 专用对齐工具 | 词级 | GPU + 安装复杂 |
-| 简易方案：标点分割 | 按逗号/句号切分 | 句子级 | 无 |
+Piper 目前不支持词级时间戳（`generate_with_timestamps` 未实现）。
 
-### 推荐：espeak-ng 辅助 + 声学同步
+### 长句处理
 
-espeak-ng 原生支持 `--ipa -x` 输出音素序列，配合音素平均时长估算，得到词级时间戳。
-
-**备选（高精度）**：Coqui TTS 的中间层隐状态可以做 forced alignment，但需要 GPU。
-
-### 长句断句数据结构（course.json）
-
-```json
-{
-  "sentences": [
-    {
-      "id": 0,
-      "text": "I would like to book a flight to New York.",
-      "audio": "audio/sent_000.wav",
-      "duration_s": 2.35,
-      "words": [
-        { "word": "I", "start_s": 0.00, "end_s": 0.12 },
-        { "word": "would", "start_s": 0.12, "end_s": 0.30 },
-        { "word": "like", "start_s": 0.30, "end_s": 0.52 },
-        { "word": "to", "start_s": 0.52, "end_s": 0.64 },
-        { "word": "book", "start_s": 0.64, "end_s": 0.90 },
-        { "word": "a", "start_s": 0.90, "end_s": 0.95 },
-        { "word": "flight", "start_s": 0.95, "end_s": 1.25 },
-        { "word": "to", "start_s": 1.25, "end_s": 1.38 },
-        { "word": "New", "start_s": 1.38, "end_s": 1.55 },
-        { "word": "York.", "start_s": 1.55, "end_s": 2.35 }
-      ]
-    },
-    {
-      "id": 1,
-      "text": "Could you recommend a good restaurant nearby?",
-      "audio": "audio/sent_001.wav",
-      "duration_s": 2.81,
-      "words": [
-        { "word": "Could", "start_s": 0.00, "end_s": 0.25 },
-        { "word": "you", "start_s": 0.25, "end_s": 0.40 },
-        { "word": "recommend", "start_s": 0.40, "end_s": 0.95 },
-        { "word": "a", "start_s": 0.95, "end_s": 1.00 },
-        { "word": "good", "start_s": 1.00, "end_s": 1.25 },
-        { "word": "restaurant", "start_s": 1.25, "end_s": 1.85 },
-        { "word": "nearby?", "start_s": 1.85, "end_s": 2.81 }
-      ]
-    }
-  ]
-}
-```
-
-- `words` 含每个词的时间节点，用于 App 端**逐词复读**
-- 标点停顿时长体现在间隔中
-- `id` 连续递增，用于跟读 App 顺序播放
+用户原始 `sentences.txt` 中一行可能包含多句合并段落（如新闻段落），生成时按句号/问号/感叹号拆分为独立音频文件，每句独立生成时间戳。
 
 ---
 
 ## 5. .freqpack 格式
 
 ```
-my-course.freqpack  (zip)
+{name}.freqpack  (zip)
 ├── course.json      # 课程结构
 ├── meta.json        # 元信息
 └── audio/           # 音频目录
-    ├── sent_000.wav
-    ├── sent_001.wav
+    ├── sent_0000.wav
+    ├── sent_0001.wav
     └── ...
+```
+
+### course.json
+
+```json
+{
+  "title": "sentences",
+  "language": "en",
+  "engine": "kokoro",
+  "voice": "af_sarah",
+  "sentences": [
+    {
+      "id": 0,
+      "text": "Kamakura Store Sells Kanji Ice Cream That Doesn't Melt",
+      "audio": "audio/sent_0000.wav",
+      "words": [
+        { "word": "Kamakura", "start": 0.0, "end": 0.45 },
+        { "word": "Store", "start": 0.45, "end": 0.72 },
+        ...
+      ]
+    }
+  ]
+}
 ```
 
 ### meta.json
 
 ```json
 {
-  "title": "My English Course",
+  "title": "sentences",
   "language": "en",
-  "version": "1.0",
-  "created_at": "2026-05-31T00:00:00Z",
   "engine": "kokoro",
   "voice": "af_sarah"
 }
@@ -185,17 +177,18 @@ my-course.freqpack  (zip)
 freq-lang/
 ├── src/freqgen/
 │   ├── __init__.py
-│   ├── cli.py              # Click CLI 入口
-│   ├── engines/
-│   │   ├── __init__.py
-│   │   ├── base.py         # TTSEngine 抽象基类
-│   │   ├── kokoro.py       # Kokoro-ONNX 实现
-│   │   ├── piper.py        # Piper 实现
-│   │   └── registry.py     # 引擎注册表
-│   ├── packager.py         # .freqpack 打包
-│   └── timestamp.py        # 音素对齐/时间戳提取
+│   ├── cli.py              # Click CLI 入口（单命令入口）
+│   ├── packager.py         # .freqpack 打包（course.json + zip）
+│   └── engines/
+│       ├── __init__.py
+│       ├── base.py         # TTSEngine 抽象基类 + 数据类
+│       ├── kokoro.py       # Kokoro-ONNX 实现（含时间戳对齐）
+│       ├── piper.py        # Piper 实现
+│       └── registry.py     # 引擎注册表
+├── sentences.txt           # 用户课程素材
+├── output/                 # 生成物输出目录（.gitignore）
 ├── pyproject.toml
-└── requirements.txt
+└── README.md
 ```
 
 ---
@@ -204,31 +197,28 @@ freq-lang/
 
 ```bash
 # 安装依赖
-pip install kokoro-onnx soundfile piper-tts click
+pip install kokoro-onnx soundfile piper-tts click espeakng
 
 # 下载 Kokoro 模型
 mkdir -p ~/.cache/kokoro
 wget -P ~/.cache/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
 wget -P ~/.cache/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
 
-# 安装 freqgen
-pip install -e .
+# 安装 freqgen（全局）
+pip install .
+
+# 批量生成课程
+freqgen sentences.txt
 
 # 单句测试
-freqgen speak "I would like to book a flight." --voice af_sarah
-
-# 批量导入
-freqgen import sentences.txt --output ./my-course --engine kokoro
-
-# 打包
-freqgen pack ./my-course -o my-course.freqpack
+freqgen "Hello world" -v af_sarah
 ```
 
 ---
 
-## 8. 扩展其他引擎
+## 8. 引擎扩展
 
-继承 TTSEngine 注册即可：
+实现 `TTSEngine` 后用 `@register_engine` 注册：
 
 ```python
 @register_engine("myengine")
@@ -239,8 +229,11 @@ class MyEngine(TTSEngine):
 
 ---
 
-## 9. 待定
+## 9. 待定 / 已解决
 
-1. 时间戳精度：espeak-ng 估算 vs 高频采样精度，需实测
-2. 长句拆分策略：超 N 秒自动拆分还是保留长句？
-3. 音频格式：WAV（无损）还是 MP3（小体积）？
+| 问题 | 状态 |
+|------|------|
+| 时间戳精度 | 已解决：espeak-ng phoneme group 计数 |
+| 长句自动拆分 | 已解决：按句号/问号/感叹号拆分 |
+| 音频格式 | WAV（无损，简单可靠） |
+| Piper 词级时间戳 | Piper 不支持，移动端 App 可用已有时间戳 |
