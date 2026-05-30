@@ -11,7 +11,7 @@ from .packager import FreqpackPackager
 
 
 @click.group()
-@click.versionOption(version="0.1.0")
+@click.version_option(version="0.1.0")
 def main():
     """freqgen — generate .freqpack English learning courses with TTS."""
     pass
