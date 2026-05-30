@@ -91,38 +91,54 @@ class KokoroEngine(TTSEngine):
         except Exception:
             return []
 
+    def _phoneme_count(self, word: str) -> int:
+        """Count phoneme groups for a single word via espeak-ng -x."""
+        try:
+            result = subprocess.run(
+                ["espeak-ng", "--ipa", "-q", "-x", word],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                return 1
+            return len([p for p in result.stdout.strip().split() if p.strip()])
+        except Exception:
+            return 1
+
     def _align_words_to_audio(self, text: str, phonemes: list[tuple[str, float]],
                                duration: float, sr: int, samples) -> list[WordTimestamp]:
-        """Align words to audio using phoneme count ratio."""
-        if not phonemes:
-            # Fallback: return single word with full duration
-            return [WordTimestamp(word=text.strip(), start_s=0.0, end_s=duration)]
+        """Align words to audio using real phoneme counts per word from espeak-ng.
 
-        # Split text into words
-        words = text.replace(".", " . ").replace(",", " , ").replace("?", " ?").replace("!", " !").split()
-        total_phonemes = len(phonemes)
-        if total_phonemes == 0:
-            return [WordTimestamp(word=text.strip(), start_s=0.0, end_s=duration)]
+        Fix: use actual phoneme group counts (via espeak-ng -x on each word)
+        instead of the buggy len(word)*2 heuristic which over-allocates time
+        to long words and under-allocates to short ones.
+        """
+        import re
+        # Split text into words, preserving punctuation as separate tokens
+        words = re.sub(r'[.,?!]', r' \g<0> ', text).split()
 
-        # Count phonemes per word (heuristic: each word has proportional phonemes)
+        # Get real phoneme count per word
         word_phoneme_counts = []
-        phoneme_idx = 0
         for word in words:
-            # Approximate phoneme count from word length
-            # This is rough - proper alignment needs montreal-forced-aligner or similar
-            approx = max(1, len(word) * 2)
-            word_phoneme_counts.append(approx)
+            if word in ('.', ',', '?', '!'):
+                word_phoneme_counts.append(0)
+            else:
+                word_phoneme_counts.append(self._phoneme_count(word))
 
-        total_approx = sum(word_phoneme_counts)
+        # Sum only non-punctuation words for the total
+        valid_counts = [wc for i, wc in enumerate(word_phoneme_counts)
+                       if words[i] not in ('.', ',', '?', '!')]
+        total = sum(valid_counts)
+        if total == 0:
+            return [WordTimestamp(word=text.strip(), start_s=0.0, end_s=duration)]
+
         timestamps = []
         current_time = 0.0
 
         for i, word in enumerate(words):
-            if word in (".", ",", "?", "!"):
-                # Punctuation: small time step, include in previous or next
+            if word in ('.', ',', '?', '!'):
                 continue
-            phoneme_share = word_phoneme_counts[i] / total_approx
-            word_duration = duration * phoneme_share
+            share = word_phoneme_counts[i] / total
+            word_duration = duration * share
             end_time = min(current_time + word_duration, duration)
             timestamps.append(WordTimestamp(
                 word=word,
@@ -131,7 +147,7 @@ class KokoroEngine(TTSEngine):
             ))
             current_time = end_time
 
-        # If we have fewer words than phonemes allow, fill remaining time
+        # Stretch last word to fill any rounding gap
         if timestamps and current_time < duration:
             timestamps[-1] = WordTimestamp(
                 word=timestamps[-1].word,
@@ -140,3 +156,4 @@ class KokoroEngine(TTSEngine):
             )
 
         return timestamps
+
