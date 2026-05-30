@@ -77,14 +77,14 @@ def _import_and_pack(input_path: Path, output_path: str | None, voice: str, engi
 
     # Output dir: temp dir under the same parent as input
     course_name = input_path.stem
-    output_dir = Path(str(input_path.parent / course_name))
+    output_dir = Path("output") / course_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine .freqpack path
     if output_path:
         freqpack_path = Path(output_path)
     else:
-        freqpack_path = input_path.parent / f"{course_name}.freqpack"
+        freqpack_path = Path("output") / f"{course_name}.freqpack"
 
     try:
         eng = get_engine(engine)
