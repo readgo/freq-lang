@@ -39,6 +39,10 @@ def main(input: str, output_path: str, voice: str, engine: str):
     if input_path.exists() and input_path.is_file():
         # File mode: import + pack
         _import_and_pack(input_path, output_path, voice, engine)
+    elif not input_path.exists():
+        # Path doesn't exist — likely a file the user expected to exist
+        click.echo(f"File not found: {input}", err=True)
+        sys.exit(1)
     else:
         # Text mode: speak single sentence
         _speak(input, voice, engine, output_path)
