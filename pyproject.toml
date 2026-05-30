@@ -1,0 +1,20 @@
+[project]
+name = "freqgen"
+version = "0.1.0"
+description = "CLI tool for generating .freqpack English learning courses with TTS"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "soundfile",
+    "espeakng",
+]
+
+[project.scripts]
+freqgen = "freqgen.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
