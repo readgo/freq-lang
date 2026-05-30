@@ -15,9 +15,10 @@ from .packager import FreqpackPackager
 @click.argument("input", nargs=1)
 @click.option("-o", "--output", "output_path", default=None,
               help="Output path (file.freqpack for import, .wav for single text)")
-@click.option("-v", "--voice", default="af_sarah", help="Voice name")
+@click.option("-v", "--voice", default=None,
+              help="Voice name (default: engine's first available voice)")
 @click.option("-e", "--engine", default="kokoro", help="TTS engine (kokoro/piper)")
-def main(input: str, output_path: str, voice: str, engine: str):
+def main(input: str, output_path: str, voice: str | None, engine: str):
     """freqgen — generate .freqpack English learning courses with TTS.
 
     Usage:
@@ -27,7 +28,6 @@ def main(input: str, output_path: str, voice: str, engine: str):
       freqgen "Hello" -o out.wav           speak → out.wav
       freqgen voices                        list available voices
     """
-    # Dispatch by input type
     input = input.strip()
 
     if input == "voices":
@@ -37,18 +37,27 @@ def main(input: str, output_path: str, voice: str, engine: str):
     input_path = Path(input)
 
     if input_path.exists() and input_path.is_file():
-        # File mode: import + pack
         _import_and_pack(input_path, output_path, voice, engine)
     elif input_path.exists() and not input_path.is_file():
-        # Path exists but is not a file (e.g., a directory)
         click.echo(f"Not a file: {input}", err=True)
         sys.exit(1)
     else:
-        # Text mode: speak single sentence (file doesn't exist)
         _speak(input, voice, engine, output_path)
 
 
-def _speak(text: str, voice: str, engine: str, output_path: str | None):
+def _resolve_voice(eng, voice: str | None) -> str:
+    """Return voice name, using engine default if not specified or not in engine's voices."""
+    if voice is None:
+        return eng.voices()[0]
+    if voice in eng.voices():
+        return voice
+    # Unknown voice — offer engine's own default instead of crashing
+    default = eng.voices()[0]
+    click.echo(f"Unknown voice '{voice}'. Using engine default: {default}", err=True)
+    return default
+
+
+def _speak(text: str, voice: str | None, engine: str, output_path: str | None):
     try:
         eng = get_engine(engine)
     except ImportError as e:
@@ -58,9 +67,7 @@ def _speak(text: str, voice: str, engine: str, output_path: str | None):
         click.echo(f"Failed to load engine '{engine}': {e}", err=True)
         sys.exit(1)
 
-    if voice not in eng.voices():
-        click.echo(f"Unknown voice '{voice}'. Available: {eng.voices()[:5]}... (use 'freqgen voices' for full list)", err=True)
-        sys.exit(1)
+    voice = _resolve_voice(eng, voice)
 
     out = Path(output_path) if output_path else Path("stdout.wav")
     try:
@@ -71,20 +78,17 @@ def _speak(text: str, voice: str, engine: str, output_path: str | None):
         sys.exit(1)
 
 
-def _import_and_pack(input_path: Path, output_path: str | None, voice: str, engine: str):
-    # Read sentences
+def _import_and_pack(input_path: Path, output_path: str | None, voice: str | None, engine: str):
     with open(input_path, "r", encoding="utf-8") as f:
         sentences = [line.strip() for line in f if line.strip()]
     if not sentences:
         click.echo("No sentences found.", err=True)
         sys.exit(1)
 
-    # Output dir: temp dir under the same parent as input
     course_name = input_path.stem
     output_dir = Path("output") / course_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Determine .freqpack path
     if output_path:
         freqpack_path = Path(output_path)
     else:
@@ -95,6 +99,8 @@ def _import_and_pack(input_path: Path, output_path: str | None, voice: str, engi
     except Exception as e:
         click.echo(f"Failed to load engine '{engine}': {e}", err=True)
         sys.exit(1)
+
+    voice = _resolve_voice(eng, voice)
 
     packager = FreqpackPackager(output_dir, title=course_name, engine=engine, voice=voice)
 
@@ -112,7 +118,6 @@ def _import_and_pack(input_path: Path, output_path: str | None, voice: str, engi
 
     packager.write()
 
-    # Package
     try:
         packed = packager.package(freqpack_path)
         click.echo(f"Done: {packed}")

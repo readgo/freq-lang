@@ -13,26 +13,43 @@ except ImportError:
 from .base import GenerationResult, SentenceResult, TTSEngine, WordTimestamp
 
 
+def _discover_voices() -> list[str]:
+    """Scan ~/.local/share/piper for all available voice names."""
+    piper_dir = Path.home() / ".local/share/piper"
+    if not piper_dir.exists():
+        return []
+    return sorted(p.stem for p in piper_dir.iterdir() if p.suffix == ".onnx")
+
+
 class PiperEngine(TTSEngine):
     name = "piper"
-    default_voice = "en_US-lessac-medium"
-    available_voices = []  # dynamically loaded
+    default_voice = None  # set dynamically from discovered voices
+    available_voices = []  # populated by _discover_voices
 
-    def __init__(self, model_path: str | Path, config_path: str | Path | None = None):
-        self.model_path = Path(model_path)
+    def __init__(self, model_path: str | Path | None = None, config_path: str | Path | None = None):
+        self.available_voices = _discover_voices()
+        if not self.available_voices:
+            raise FileNotFoundError(
+                "Piper voice not found. Download one like this:\n"
+                "  python3 /home/jing/.local/lib/python3.12/site-packages/piper/download_voices.py en_US-lessac-medium --download-dir ~/.local/share/piper"
+            )
+        # Use specified model, or first discovered, or default
+        if model_path:
+            self.model_path = Path(model_path)
+        else:
+            chosen = self.available_voices[0]
+            self.model_path = Path.home() / ".local/share/piper" / f"{chosen}.onnx"
+        self.default_voice = self.model_path.stem
         self.config_path = Path(config_path) if config_path else None
-        self._load_voices()
 
-    def _load_voices(self):
-        """Extract available voices from model name."""
-        model_name = self.model_path.stem
-        self.available_voices = [model_name]
+    def voices(self) -> list[str]:
+        return self.available_voices
 
     def generate(self, text: str, voice: str, output_path: Path) -> GenerationResult:
         cmd = [
             "piper", "-m", str(self.model_path),
             "-f", str(output_path),
-            "--cuda",  # use GPU if available
+            "--cuda",
         ]
         if self.config_path:
             cmd.extend(["-c", str(self.config_path)])
@@ -64,13 +81,11 @@ class PiperEngine(TTSEngine):
         words = text.replace(".", " . ").replace(",", " , ").replace("?", " ?").replace("!", " !").split()
         if not words:
             return []
-        # Heuristic: divide duration equally among words
-        # Punctuation gets minimal time
         punct_words = {".", ",", "?", "!"}
         word_count = sum(1 for w in words if w not in punct_words)
         if word_count == 0:
             return [WordTimestamp(word=text.strip(), start_s=0.0, end_s=duration)]
-        
+
         avg_word_duration = duration / word_count
         timestamps = []
         current_time = 0.0

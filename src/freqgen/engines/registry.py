@@ -1,6 +1,5 @@
 """TTS engine registry."""
 
-from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -30,17 +29,9 @@ def get_engine(
             voices_path=kwargs.get("voices_path", Path.home() / ".cache/kokoro/voices-v1.0.bin"),
         )
     elif name == "piper":
-        model_path = kwargs.get("model_path")
-        if model_path is None:
-            default_model = Path.home() / ".local/share/piper"
-            if not any(default_model.rglob("*.onnx")):
-                raise FileNotFoundError(
-                    "Piper voice not found. Download one like this:\n"
-                    "  python3 /home/jing/.local/lib/python3.12/site-packages/piper/download_voices.py en_US-lessac-medium --download-dir ~/.local/share/piper"
-                )
-            model_path = str(next(default_model.rglob("*.onnx")))
+        # PiperEngine handles its own model discovery internally
         return PiperEngine(
-            model_path=model_path,
+            model_path=kwargs.get("model_path"),
             config_path=kwargs.get("config_path"),
         )
     else:
