@@ -6,7 +6,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .engines.base import SentenceResult
+from .engines.base import GenerationResult
 
 
 @dataclass
@@ -22,22 +22,17 @@ class FreqpackMeta:
 
 
 @dataclass
-class WordTimestampJSON:
-    word: str
-    start_s: float
-    end_s: float
+class SegmentJSON:
+    text: str
+    audio: str
+    duration_s: float
 
     def to_dict(self):
-        return {"word": self.word, "start_s": self.start_s, "end_s": self.end_s}
-
-
-@dataclass
-class PauseRegionJSON:
-    start_s: float
-    end_s: float
-
-    def to_dict(self):
-        return {"start_s": self.start_s, "end_s": self.end_s}
+        return {
+            "text": self.text,
+            "audio": self.audio,
+            "duration_s": self.duration_s,
+        }
 
 
 @dataclass
@@ -46,18 +41,22 @@ class SentenceJSON:
     text: str
     audio: str
     duration_s: float
-    words: list[WordTimestampJSON]
-    pauses: list[PauseRegionJSON]
+    segments: list[SegmentJSON] = None
+
+    def __post_init__(self):
+        if self.segments is None:
+            self.segments = []
 
     def to_dict(self):
-        return {
+        d = {
             "id": self.id,
             "text": self.text,
             "audio": self.audio,
             "duration_s": self.duration_s,
-            "words": [w.to_dict() for w in self.words],
-            "pauses": [p.to_dict() for p in self.pauses],
         }
+        if self.segments:
+            d["segments"] = [s.to_dict() for s in self.segments]
+        return d
 
 
 class FreqpackPackager:
@@ -75,31 +74,33 @@ class FreqpackPackager:
         )
         self.sentences: list[SentenceJSON] = []
 
-    def add_sentence(self, result: SentenceResult, index: int):
-        words_json = []
-        if result.words:
-            for w in result.words:
-                words_json.append(WordTimestampJSON(
-                    word=w.word,
-                    start_s=w.start_s,
-                    end_s=w.end_s,
-                ))
+    def add_sentence(self, result: GenerationResult, index: int, text: str,
+                     segments: list[GenerationResult] | None = None,
+                     segment_texts: list[str] | None = None):
+        """Add a sentence.
 
-        pauses_json = []
-        if result.pauses:
-            for p in result.pauses:
-                pauses_json.append(PauseRegionJSON(
-                    start_s=p.start_s,
-                    end_s=p.end_s,
+        Args:
+            result: TTS result for the full sentence.
+            index: Sentence index.
+            text: Sentence text.
+            segments: List of TTS results for each segment (optional).
+            segment_texts: List of segment texts, aligned with segments.
+        """
+        segs: list[SegmentJSON] = []
+        if segments and segment_texts:
+            for seg_idx, (seg_result, seg_text) in enumerate(zip(segments, segment_texts)):
+                segs.append(SegmentJSON(
+                    text=seg_text,
+                    audio=f"audio/sent_{index:04d}_{seg_idx:02d}.wav",
+                    duration_s=seg_result.duration_s,
                 ))
 
         self.sentences.append(SentenceJSON(
             id=index,
-            text=result.text,
+            text=text,
             audio=f"audio/sent_{index:04d}.wav",
             duration_s=result.duration_s,
-            words=words_json,
-            pauses=pauses_json,
+            segments=segs,
         ))
 
     def write(self):

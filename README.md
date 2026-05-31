@@ -103,6 +103,16 @@ Each sentence includes:
 - **`words`**: word-level timestamps for word-by-word replay and highlighting
 - **`pauses`**: silence regions ≥ 100ms detected via RMS energy analysis (20ms window, 8% median threshold). Useful for segmenting long sentences into practice chunks.
 
+## Long Sentence Splitting
+
+Long sentences are split into short, learnable chunks using `phrasplit.split_long_lines(max_length=45)`:
+
+1. **Sentence boundaries first**: split at `.!?`
+2. **Comma/semicolon next**: if still too long, split at `,;`
+3. **Word boundary fallback**: if still too long, split at nearest space
+
+`max_length=45` keeps each chunk short and rhythm-clear for speaking practice.
+
 ## Architecture
 
 - `engines/base.py` — `TTSEngine` abstract base + data classes
@@ -110,4 +120,6 @@ Each sentence includes:
 - `engines/piper.py` — Piper implementation
 - `engines/registry.py` — engine registration/factory
 - `packager.py` — `.freqpack` zip builder
+- `splitters/` — sentence splitting (phrasplit rule-based)
+- `splitters/` — sentence splitting (phrasplit rule-based)
 - `cli.py` — Click CLI entry point

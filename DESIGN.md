@@ -122,9 +122,17 @@ Kokoro 的 `generate_with_timestamps` 内部：
 4. 与 Kokoro 生成的实际音频时长同步
 
 Piper 目前不支持词级时间戳（`generate_with_timestamps` 未实现）。
-### 长句处理
+### 长句拆分（phrasplit split_long_lines）
 
-用户原始 `sentences.txt` 中一行可能包含多句合并段落（如新闻段落），生成时按句号/问号/感叹号拆分为独立音频文件，每句独立生成时间戳。
+用户原始 `sentences.txt` 中一行可能包含多句合并段落（如新闻段落），或单个长句。
+
+`PhrasplitSplitter` 使用 `phrasplit.split_long_lines(max_length=45, use_spacy=False)` 拆分为跟读片段：
+
+1. **句子边界优先**：在 `.!?` 句末标点处拆分
+2. **逗号/分号次之**：若仍超长，在 `,;` 处拆分
+3. **词边界兜底**：若仍超长，在最近空格处截断
+
+`max_length=45` 为跟读场景目标长度，片段完整且节奏清晰。
 ### 停顿检测算法
 
 对 Kokoro 生成的 WAV 音频进行 RMS 能量分析：
