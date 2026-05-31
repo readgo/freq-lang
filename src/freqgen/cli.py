@@ -27,6 +27,7 @@ def main(input: str, output_path: str, voice: str | None, engine: str):
       freqgen sentences.txt -o my.zip       import + pack → my.zip
       freqgen "Hello" -o out.wav           speak → out.wav
       freqgen voices                        list available voices
+      freqgen example/                      batch: convert all .txt in directory
     """
     input = input.strip()
 
@@ -36,13 +37,15 @@ def main(input: str, output_path: str, voice: str | None, engine: str):
 
     input_path = Path(input)
 
-    if input_path.exists() and input_path.is_file():
+    if input_path.is_dir():
+        _batch_import(input_path, output_path, voice, engine)
+    elif input_path.exists() and input_path.is_file():
         _import_and_pack(input_path, output_path, voice, engine)
-    elif input_path.exists() and not input_path.is_file():
+    elif not input_path.exists():
+        _speak(input, voice, engine, output_path)
+    else:
         click.echo(f"Not a file: {input}", err=True)
         sys.exit(1)
-    else:
-        _speak(input, voice, engine, output_path)
 
 
 def _resolve_voice(eng, voice: str | None) -> str:
@@ -51,7 +54,6 @@ def _resolve_voice(eng, voice: str | None) -> str:
         return eng.voices()[0]
     if voice in eng.voices():
         return voice
-    # Unknown voice — offer engine's own default instead of crashing
     default = eng.voices()[0]
     click.echo(f"Unknown voice '{voice}'. Using engine default: {default}", err=True)
     return default
@@ -68,7 +70,6 @@ def _speak(text: str, voice: str | None, engine: str, output_path: str | None):
         sys.exit(1)
 
     voice = _resolve_voice(eng, voice)
-
     out = Path(output_path) if output_path else Path("stdout.wav")
     try:
         result = eng.generate(text, voice=voice, output_path=out)
@@ -78,7 +79,15 @@ def _speak(text: str, voice: str | None, engine: str, output_path: str | None):
         sys.exit(1)
 
 
-def _import_and_pack(input_path: Path, output_path: str | None, voice: str | None, engine: str):
+def _import_and_pack(input_path: Path, output_path: str | None,
+                    voice: str | None, engine: str,
+                    output_dir_override: Path | None = None,
+                    freqpack_dir_override: Path | None = None):
+    """Convert a .txt file to .freqpack.
+
+    Single-file mode:  output/<course>/           + output/<course>.freqpack
+    Batch mode:        output/<batch>/<course>/   + output/<batch>/courses/<course>.freqpack
+    """
     with open(input_path, "r", encoding="utf-8") as f:
         sentences = [line.strip() for line in f if line.strip()]
     if not sentences:
@@ -86,13 +95,20 @@ def _import_and_pack(input_path: Path, output_path: str | None, voice: str | Non
         sys.exit(1)
 
     course_name = input_path.stem
-    output_dir = Path("output") / course_name
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    if output_path:
-        freqpack_path = Path(output_path)
+    if output_dir_override:
+        output_dir = output_dir_override
+        output_dir.mkdir(parents=True, exist_ok=True)
+        freqpack_dir = freqpack_dir_override or output_dir / "courses"
+        freqpack_dir.mkdir(parents=True, exist_ok=True)
+        freqpack_path = freqpack_dir / f"{course_name}.freqpack"
     else:
-        freqpack_path = Path("output") / f"{course_name}.freqpack"
+        output_dir = Path("output") / course_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if output_path:
+            freqpack_path = Path(output_path)
+        else:
+            freqpack_path = output_dir.parent / f"{course_name}.freqpack"
 
     try:
         eng = get_engine(engine)
@@ -101,7 +117,6 @@ def _import_and_pack(input_path: Path, output_path: str | None, voice: str | Non
         sys.exit(1)
 
     voice = _resolve_voice(eng, voice)
-
     packager = FreqpackPackager(output_dir, title=course_name, engine=engine, voice=voice)
 
     click.echo(f"Processing {len(sentences)} sentences with {engine} ({voice})...")
@@ -124,6 +139,55 @@ def _import_and_pack(input_path: Path, output_path: str | None, voice: str | Non
     except Exception as e:
         click.echo(f"Packaging error: {e}", err=True)
         sys.exit(1)
+
+
+def _batch_import(input_dir: Path, output_path: str | None, voice: str | None, engine: str):
+    """Convert all .txt files in a directory to .freqpack.
+
+    Structure:
+      freqgen example/
+      output/example/
+      ├── file1/
+      │   ├── course.json
+      │   ├── meta.json
+      │   └── audio/
+      ├── file2/
+      │   └── ...
+      ├── sub/
+      │   └── file3/
+      │       └── ...
+      └── courses/
+          ├── file1.freqpack
+          ├── file2.freqpack
+          └── file3.freqpack
+    """
+    txt_files = sorted(input_dir.rglob("*.txt"))
+    if not txt_files:
+        click.echo(f"No .txt files found in {input_dir}", err=True)
+        sys.exit(1)
+
+    batch_root = Path("output") / input_dir.name
+    courses_dir = batch_root / f"{input_dir.name}_courses"
+    courses_dir.mkdir(parents=True, exist_ok=True)
+
+    click.echo(f"Found {len(txt_files)} .txt file(s) in {input_dir}/\n")
+
+    for txt_file in txt_files:
+        parent_rel = txt_file.parent.relative_to(input_dir)
+        rel_dir_parts = parent_rel.parts
+
+        if not rel_dir_parts:
+            out_dir = batch_root / txt_file.stem
+        else:
+            out_dir = batch_root / Path(*rel_dir_parts) / txt_file.stem
+
+        click.echo(f"--- Processing: {txt_file.name} ---")
+        _import_and_pack(txt_file, None, voice, engine,
+                         output_dir_override=out_dir,
+                         freqpack_dir_override=courses_dir)
+        click.echo()
+
+    click.echo(f"Batch complete: {len(txt_files)} course(s) created in output/{input_dir.name}/")
 
 
 def _list_voices(engine: str):

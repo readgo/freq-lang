@@ -1,0 +1,24 @@
+Data Centers Use Up to 21% of Countries' Energy
+From emails and social media to videos and even the words you're reading right now, the digital world relies on data centers.
+
+These are the physical places that house computer servers to store, process and transmit the data that we use every day.
+
+While many countries are investing in building more data centers as they look to a digitally driven economic future, there have been concerns about their environmental impact and resource usage.
+
+According to a report by the International Data Center Authority (IDCA), data centers now consume 2% of the world's electricity, which is an increase from 1.7% in 2024.
+
+And while this number may not seem very high by itself, several countries are using a far higher percentage of their power for data centers.
+
+For example, data centers now use 21% of Ireland's electricity, and 19.5% of Singapore's. Both of these are small countries, with populations of between about 5 million and 6 million. But data centers are also using a relatively high percentage of electricity in some larger countries as well.
+
+The US has around 5,400 data centers, according to numbers from digital procurement platform Cloudscene. That's around 10 times more than any other country. And the IDCA report says these now use 6% of America's electricity.
+
+
+
+The IDCA has found that when data centers start to consume more than 5% of a country's electricity, community and political pushback begin to emerge. Other countries far above this usage threshold include Lithuania, the Netherlands and Denmark.
+
+Aside from energy consumption, there are also concerns about how much water data centers use for their cooling systems.
+
+The IDCA report says the global water consumption of data centers is actually not that high compared to other sectors — and modern data centers will be designed to reuse cooling water again and again.
+
+However, the report also notes that older existing data centers do rely on far less efficient systems, and can be massive water consumers. It says one large data center can use as much potable water as 6,500 homes!
