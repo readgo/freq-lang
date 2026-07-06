@@ -62,12 +62,24 @@ jobs:
       - name: Package and create release
         run: |
           DATE_TAG="packs-$(date +%Y%m%d)"
-          mkdir -p "release-packs/$DATE_TAG"
+          BASE="release-packs/$DATE_TAG"
+          mkdir -p "$BASE/business-politics" "$BASE/science-technology"
 
-          if find engoo_news -name '*.freqpack' 2>/dev/null | grep -q .; then
-            find engoo_news -name '*.freqpack' -exec cp {} "release-packs/$DATE_TAG/" \;
+          if [ -d engoo_news/business-politics ]; then
+            cp engoo_news/business-politics/*.freqpack "$BASE/business-politics/" 2>/dev/null || true
+          fi
+          if [ -d engoo_news/science-technology ]; then
+            cp engoo_news/science-technology/*.freqpack "$BASE/science-technology/" 2>/dev/null || true
+          fi
+
+          HAS_PACKS=false
+          for d in "$BASE"/*/; do
+            if [ "$(ls -A "$d" 2>/dev/null)" ]; then HAS_PACKS=true; fi
+          done
+
+          if [ "$HAS_PACKS" = "true" ]; then
             cd release-packs
-            zip -q "${DATE_TAG}.zip" "$DATE_TAG"/*
+            zip -q -r "${DATE_TAG}.zip" "$DATE_TAG"
             cd ..
 
             gh release create "$DATE_TAG" \
@@ -81,4 +93,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -rf release-packs
+        run: rm -rf release-packs engoo_news

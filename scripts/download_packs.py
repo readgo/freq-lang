@@ -2,6 +2,11 @@
 """
 Download latest .freqpack Release from GitHub (public repo, no token needed).
 
+Extracts to:
+  EngooNews/
+    ├── business-politics/day-20260705-xxx.freqpack
+    └── science-technology/day-20260704-xxx.freqpack
+
 Usage:
     python scripts/download_packs.py                  # latest release
     python scripts/download_packs.py --tag packs-20260707
@@ -17,7 +22,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-PACKS_DIR = BASE_DIR / "engoo_news"
+PACKS_DIR = BASE_DIR / "EngooNews"
 
 GH_API = "https://api.github.com"
 REPO = "readgo/freq-lang"
@@ -59,7 +64,14 @@ def download_and_extract(asset, dest):
     with zipfile.ZipFile(zip_path, "r") as zf:
         for member in zf.namelist():
             if member.endswith(".freqpack"):
-                target = dest / Path(member).name
+                # member is like "packs-20260707/business-politics/day-xxx.freqpack"
+                parts = Path(member).parts
+                if len(parts) >= 2:
+                    rel_path = Path(*parts[1:])  # skip the date-tag folder
+                else:
+                    rel_path = Path(member).name
+                target = dest / rel_path
+                target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists() and target.stat().st_size == zf.getinfo(member).file_size:
                     continue
                 zf.extract(member, dest)
@@ -67,6 +79,7 @@ def download_and_extract(asset, dest):
                 if src != target:
                     src.rename(target)
                 extracted += 1
+
     zip_path.unlink()
     return extracted
 
@@ -108,6 +121,9 @@ def main():
         total += count
 
     print(f"\nDone: {total} pack(s) → {PACKS_DIR}/")
+    if total > 0:
+        print(f"  {PACKS_DIR}/business-politics/  ({len(list(PACKS_DIR.glob('business-politics/*.freqpack')))} packs)")
+        print(f"  {PACKS_DIR}/science-technology/  ({len(list(PACKS_DIR.glob('science-technology/*.freqpack')))} packs)")
 
 
 if __name__ == "__main__":
