@@ -1,0 +1,74 @@
+name: Engoo Daily News
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Articles per category'
+        required: false
+        default: '10'
+      rebuild:
+        description: 'Rebuild all packs (true/false)'
+        required: false
+        default: 'false'
+
+jobs:
+  fetch-and-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng libsndfile1-dev
+
+      - name: Install freqgen and TTS engines
+        run: |
+          pip install -e .
+          pip install kokoro-onnx soundfile
+
+      - name: Download Kokoro models
+        run: |
+          mkdir -p ~/.cache/kokoro
+          if [ ! -f ~/.cache/kokoro/kokoro-v1.0.onnx ]; then
+            wget -q -P ~/.cache/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+          fi
+          if [ ! -f ~/.cache/kokoro/voices-v1.0.bin ]; then
+            wget -q -P ~/.cache/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+          fi
+
+      - name: Download articles and generate packs
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '10' }}"
+          REBUILD="${{ github.event.inputs.rebuild || 'false' }}"
+          ARGS="--limit $LIMIT"
+          if [ "$REBUILD" = "true" ]; then ARGS="$ARGS --rebuild"; fi
+          python scripts/download_engoo_news.py $ARGS
+
+      - name: Commit new articles
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add engoo_articles/
+          if git diff --cached --quiet; then
+            echo "No new articles"
+          else
+            git commit -m "chore: update engoo articles $(date +%Y-%m-%d)"
+            git push
+          fi
+
+      - name: Upload packs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engoo-news-${{ github.run_id }}
+          path: engoo_news/
+          if-no-files-found: warn
+          retention-days: 7
