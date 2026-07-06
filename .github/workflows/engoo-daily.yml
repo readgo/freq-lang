@@ -9,10 +9,9 @@ on:
         description: 'Articles per category'
         required: false
         default: '10'
-      rebuild:
-        description: 'Rebuild all packs (true/false)'
-        required: false
-        default: 'false'
+
+permissions:
+  contents: write
 
 jobs:
   fetch-and-pack:
@@ -30,30 +29,25 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq espeak-ng libsndfile1-dev
 
-      - name: Install freqgen and TTS engines
+      - name: Install freqgen and dependencies
         run: |
           pip install -e .
           pip install requests kokoro-onnx soundfile
 
-      - name: Download Kokoro models
+      - name: Download Kokoro TTS models
         run: |
           mkdir -p ~/.cache/kokoro
-          if [ ! -f ~/.cache/kokoro/kokoro-v1.0.onnx ]; then
-            wget -q -P ~/.cache/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
-          fi
-          if [ ! -f ~/.cache/kokoro/voices-v1.0.bin ]; then
-            wget -q -P ~/.cache/kokoro https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
-          fi
+          for f in kokoro-v1.0.onnx voices-v1.0.bin; do
+            [ -f ~/.cache/kokoro/$f ] || wget -q -P ~/.cache/kokoro \
+              "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/$f"
+          done
 
       - name: Download articles and generate packs
         run: |
-          LIMIT="${{ github.event.inputs.limit || '10' }}"
-          REBUILD="${{ github.event.inputs.rebuild || 'false' }}"
-          ARGS="--limit $LIMIT"
-          if [ "$REBUILD" = "true" ]; then ARGS="$ARGS --rebuild"; fi
-          python scripts/download_engoo_news.py $ARGS
+          python scripts/download_engoo_news.py \
+            --limit ${{ github.event.inputs.limit || '10' }}
 
-      - name: Commit new articles
+      - name: Commit new article texts to main
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
@@ -65,10 +59,31 @@ jobs:
             git push
           fi
 
-      - name: Upload packs as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: engoo-news-${{ github.run_id }}
-          path: engoo_news/
-          if-no-files-found: warn
-          retention-days: 7
+      - name: Package and release packs
+        run: |
+          DATE_TAG="packs-$(date +%Y%m%d)"
+          RELEASE_DIR="release-packs/$DATE_TAG"
+          mkdir -p "$RELEASE_DIR"
+
+          if [ -d engoo_news ] && find engoo_news -name '*.freqpack' | grep -q .; then
+            find engoo_news -name '*.freqpack' -exec cp {} "$RELEASE_DIR/" \;
+            cd release-packs
+            zip -q "${DATE_TAG}.zip" "$DATE_TAG"/*
+            cd ..
+
+            echo "RELEASE_TAG=$DATE_TAG" >> $GITHUB_ENV
+            echo "HAS_PACKS=true" >> $GITHUB_ENV
+
+            gh release create "$DATE_TAG" \
+              --title "Engoo News $DATE_TAG" \
+              --notes "Daily packs from Engoo Daily News." \
+              "release-packs/${DATE_TAG}.zip"
+          else
+            echo "HAS_PACKS=false" >> $GITHUB_ENV
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf release-packs
