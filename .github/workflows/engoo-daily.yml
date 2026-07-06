@@ -19,38 +19,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check if today's release already exists
-        run: |
-          TAG="packs-$(date +%Y%m%d)"
-          if gh release view "$TAG" --json tagName 2>/dev/null | grep -q "$TAG"; then
-            echo "Release $TAG already exists, skipping"
-            echo "SKIP=true" >> $GITHUB_ENV
-          else
-            echo "SKIP=false" >> $GITHUB_ENV
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Setup Python
-        if: env.SKIP == 'false'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install system deps
-        if: env.SKIP == 'false'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq espeak-ng libsndfile1-dev
 
       - name: Install freqgen
-        if: env.SKIP == 'false'
         run: |
           pip install -e .
           pip install requests kokoro-onnx soundfile
 
       - name: Download Kokoro TTS models
-        if: env.SKIP == 'false'
         run: |
           mkdir -p ~/.cache/kokoro
           for f in kokoro-v1.0.onnx voices-v1.0.bin; do
@@ -59,13 +43,23 @@ jobs:
           done
 
       - name: Download articles and generate packs
-        if: env.SKIP == 'false'
         run: |
           python scripts/download_engoo_news.py \
             --limit ${{ github.event.inputs.limit || '10' }}
 
+      - name: Commit manifest
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add .engoo_manifest.json
+          if git diff --cached --quiet; then
+            echo "No new articles"
+          else
+            git commit -m "chore: update engoo manifest $(date +%Y-%m-%d)"
+            git push
+          fi
+
       - name: Package and create release
-        if: env.SKIP == 'false'
         run: |
           DATE_TAG="packs-$(date +%Y%m%d)"
           mkdir -p "release-packs/$DATE_TAG"
@@ -79,9 +73,8 @@ jobs:
             gh release create "$DATE_TAG" \
               --title "Engoo News $DATE_TAG" \
               --notes "Daily .freqpack files from Engoo Daily News." \
-              "release-packs/${DATE_TAG}.zip"
-          else
-            echo "No packs generated"
+              "release-packs/${DATE_TAG}.zip" 2>/dev/null || \
+            gh release upload "$DATE_TAG" "release-packs/${DATE_TAG}.zip" --clobber
           fi
         env:
           GH_TOKEN: ${{ github.token }}

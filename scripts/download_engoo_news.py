@@ -35,6 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 ARTICLES_DIR = BASE_DIR / "engoo_articles"
 PACKS_DIR = BASE_DIR / "engoo_news"
 FREQGEN_CMD = "freqgen"
+MANIFEST_FILE = BASE_DIR / ".engoo_manifest.json"
 
 API_BASE = "https://api.engoo.com/api"
 
@@ -184,13 +185,22 @@ def get_article_detail(lesson_id):
 
 # ── file ops ───────────────────────────────────────────────────────────
 
-def is_duplicate(title, date_str, paragraphs):
-    """Check by filename existence (date prefix + title is unique enough)."""
-    fname = article_filename(title, date_str)
-    for cat_dir in ARTICLES_DIR.iterdir():
-        if cat_dir.is_dir() and (cat_dir / fname).exists():
-            return True
-    return False
+def load_manifest():
+    if MANIFEST_FILE.exists():
+        with open(MANIFEST_FILE) as f:
+            return set(tuple(e) for e in json.load(f))
+    return set()
+
+
+def save_manifest(processed_set):
+    data = sorted([list(e) for e in processed_set])
+    with open(MANIFEST_FILE, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def is_processed(course_slug, title, date_str, manifest):
+    key = (course_slug, date_str, title)
+    return key in manifest
 
 
 def save_article(course_slug, title, date_str, paragraphs):
@@ -265,6 +275,7 @@ def main():
     if args.dry_run:
         print("Mode: DRY RUN\n")
 
+    manifest = load_manifest()
     total_new = total_dupes = total_packs = total_skipped = 0
 
     for cat_key in cats:
@@ -295,7 +306,7 @@ def main():
             title = detail["title"]
             date_str = detail["date"]
 
-            if is_duplicate(title, date_str, detail["paragraphs"]):
+            if is_processed(course["slug"], title, date_str, manifest):
                 print(f"    → article exists")
                 total_dupes += 1
             else:
@@ -305,6 +316,9 @@ def main():
                     txt = save_article(course["slug"], title, date_str, detail["paragraphs"])
                     print(f"    → article: {txt.name}")
                 total_new += 1
+
+            # Mark as processed
+            manifest.add((course["slug"], date_str, title))
 
             if args.skip_freqgen:
                 continue
@@ -318,17 +332,23 @@ def main():
                 if args.dry_run:
                     print(f"    → pack: {pack_path.name}")
                 else:
-                    # If article was already on disk (dup), find it
-                    if is_duplicate(title, date_str, detail["paragraphs"]):
-                        fname = article_filename(title, date_str)
-                        txt = ARTICLES_DIR / course["slug"] / fname
-                        if not txt.exists():
-                            print(f"    ⚠ can't find existing article file")
-                            continue
                     ok = run_freqgen(txt, pack_path)
                     if ok:
                         total_packs += 1
                     time.sleep(0.3)
+
+    # Save updated manifest
+    save_manifest(manifest)
+
+    # Cleanup: remove source txt files (intermediate, not tracked by git)
+    for cat_dir in ARTICLES_DIR.iterdir():
+        if cat_dir.is_dir():
+            for f in cat_dir.glob("*.txt"):
+                f.unlink()
+            try:
+                cat_dir.rmdir()
+            except OSError:
+                pass
 
     print(f"\n── Summary ──")
     print(f"  New articles: {total_new}")
