@@ -62,7 +62,7 @@ jobs:
       - name: Package and create release
         run: |
           DATE_TAG="packs-$(date +%Y%m%d)"
-          BASE="release-packs/$DATE_TAG"
+          BASE="release-packs/EngooNews"
           mkdir -p "$BASE/business-politics" "$BASE/science-technology"
 
           if [ -d engoo_news/business-politics ]; then
@@ -79,7 +79,7 @@ jobs:
 
           if [ "$HAS_PACKS" = "true" ]; then
             cd release-packs
-            zip -q -r "${DATE_TAG}.zip" "$DATE_TAG"
+            zip -q -r "${DATE_TAG}.zip" EngooNews
             cd ..
 
             gh release create "$DATE_TAG" \
