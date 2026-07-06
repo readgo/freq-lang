@@ -63,23 +63,20 @@ def download_and_extract(asset, dest):
     extracted = 0
     with zipfile.ZipFile(zip_path, "r") as zf:
         for member in zf.namelist():
-            if member.endswith(".freqpack"):
-                # member is like "packs-20260707/business-politics/day-xxx.freqpack"
-                parts = Path(member).parts
-                if len(parts) >= 2:
-                    rel_path = Path(*parts[1:])  # skip the date-tag folder
-                else:
-                    rel_path = Path(member).name
-                target = dest / rel_path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.exists() and target.stat().st_size == zf.getinfo(member).file_size:
-                    continue
-                zf.extract(member, dest)
-                src = dest / member
-                if src != target:
-                    src.rename(target)
-                extracted += 1
-
+            if not member.endswith(".freqpack"):
+                continue
+            # Zip structure: EngooNews/business-politics/day-xxx.freqpack
+            # Strip the top-level directory to get: business-politics/day-xxx.freqpack
+            parts = Path(member).parts
+            rel_path = Path(*parts[1:]) if len(parts) >= 2 else Path(member).name
+            target = dest / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() and target.stat().st_size == zf.getinfo(member).file_size:
+                continue
+            # Extract directly to target, not to nested path
+            with zf.open(member) as src, open(target, "wb") as dst:
+                dst.write(src.read())
+            extracted += 1
     zip_path.unlink()
     return extracted
 
@@ -121,9 +118,6 @@ def main():
         total += count
 
     print(f"\nDone: {total} pack(s) → {PACKS_DIR}/")
-    if total > 0:
-        print(f"  {PACKS_DIR}/business-politics/  ({len(list(PACKS_DIR.glob('business-politics/*.freqpack')))} packs)")
-        print(f"  {PACKS_DIR}/science-technology/  ({len(list(PACKS_DIR.glob('science-technology/*.freqpack')))} packs)")
 
 
 if __name__ == "__main__":
