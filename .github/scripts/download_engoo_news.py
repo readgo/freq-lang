@@ -31,11 +31,11 @@ from pathlib import Path
 
 import requests
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ARTICLES_DIR = BASE_DIR / "engoo_articles"
 PACKS_DIR = BASE_DIR / "engoo_news"
 FREQGEN_CMD = "freqgen"
-MANIFEST_FILE = BASE_DIR / "engoo_manifest.json"
+MANIFEST_FILE = BASE_DIR / ".github/engoo_manifest.json"
 
 API_BASE = "https://api.engoo.com/api"
 
