@@ -33,7 +33,7 @@ jobs:
       - name: Install freqgen and TTS engines
         run: |
           pip install -e .
-          pip install kokoro-onnx soundfile
+          pip install requests kokoro-onnx soundfile
 
       - name: Download Kokoro models
         run: |
