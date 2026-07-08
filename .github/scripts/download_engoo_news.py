@@ -309,6 +309,8 @@ def main():
             if is_processed(course["slug"], title, date_str, manifest):
                 print(f"    → article exists")
                 total_dupes += 1
+                # txt path needed for potential freqgen rebuild below
+                txt = ARTICLES_DIR / course["slug"] / article_filename(title, date_str)
             else:
                 if args.dry_run:
                     print(f"    → article: {article_filename(title, date_str)}")
