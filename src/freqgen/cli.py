@@ -87,8 +87,8 @@ def _import_and_pack(input_path: Path, output_path: str | None,
                     freqpack_dir_override: Path | None = None):
     """Convert a .txt file to .freqpack."""
     with open(input_path, "r", encoding="utf-8") as f:
-        sentences = [line.strip() for line in f if line.strip()]
-    if not sentences:
+        paragraphs = [line.strip() for line in f if line.strip()]
+    if not paragraphs:
         click.echo("No sentences found.", err=True)
         sys.exit(1)
 
@@ -117,16 +117,37 @@ def _import_and_pack(input_path: Path, output_path: str | None,
     voice = _resolve_voice(eng, voice)
     packager = FreqpackPackager(output_dir, title=course_name, engine=engine, voice=voice)
 
-    # Sentence splitter (sentence-boundary-based)
+    # ── Step 1: Split paragraphs into individual sentences ──
+    # Each .txt line may contain multiple sentences (separated by . ! ?)
+    # We split them so each complete sentence becomes one "chapter"
     try:
-        splitter = get_splitter("sentence")
+        sent_splitter = get_splitter("sentence")
     except Exception as e:
-        click.echo(f"Warning: sentence splitter unavailable ({e}), using no split", err=True)
-        splitter = None
+        click.echo(f"Warning: sentence splitter unavailable ({e})", err=True)
+        sent_splitter = None
 
-    click.echo(f"Processing {len(sentences)} sentences with {engine} ({voice})...")
+    all_sentences = []
+    if sent_splitter:
+        for para in paragraphs:
+            parts = sent_splitter.split(para)
+            all_sentences.extend(parts)
+    else:
+        all_sentences = paragraphs
 
-    for i, sent in enumerate(sentences):
+    click.echo(f"Found {len(paragraphs)} paragraph(s), split into {len(all_sentences)} sentence(s)")
+    click.echo(f"Processing with {engine} ({voice})...")
+
+    # ── Step 2: Load segment splitter (phrasplit, for read-along segments) ──
+    # Within each sentence, we split into shorter ~45-char chunks
+    # so users can practice read-along with natural pauses
+    try:
+        seg_splitter = get_splitter("phrasplit")
+    except Exception as e:
+        click.echo(f"Warning: phrasplit unavailable ({e}), no read-along segments", err=True)
+        seg_splitter = None
+
+    # ── Step 3: Process each sentence ──
+    for i, sent in enumerate(all_sentences):
         wav_path = output_dir / "audio" / f"sent_{i:04d}.wav"
         wav_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -142,13 +163,12 @@ def _import_and_pack(input_path: Path, output_path: str | None,
             click.echo(f"  [ERROR] [{i+1}] {log_sent}: {e}", err=True)
             continue
 
-        # Split sentence if splitter available (split on TTS text)
+        # Split into read-along segments (using phrasplit on TTS text)
         segments: list[GenerationResult] = []
         segment_texts: list[str] = []
-        if splitter:
-            short_texts = splitter.split(tts_sent)
+        if seg_splitter:
+            short_texts = seg_splitter.split(tts_sent)
             if len(short_texts) > 1:
-                click.echo(f"  [{i+1}/{len(sentences)}] split into {len(short_texts)} parts")
                 for seg_idx, seg_text in enumerate(short_texts):
                     seg_path = output_dir / "audio" / f"sent_{i:04d}_{seg_idx:02d}.wav"
                     try:
@@ -164,7 +184,10 @@ def _import_and_pack(input_path: Path, output_path: str | None,
                               segments=segments if segments else None,
                               segment_texts=segment_texts if segment_texts else None)
 
-        click.echo(f"  [{i+1}/{len(sentences)}] {log_sent}")
+        # Log: show number of segments if split
+        n_segs = len(segments)
+        seg_info = f" ({n_segs} segs)" if n_segs > 1 else ""
+        click.echo(f"  [{i+1}/{len(all_sentences)}] {log_sent}{seg_info}")
 
     packager.write()
 
