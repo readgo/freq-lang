@@ -193,8 +193,13 @@ def get_article_detail(lesson_id):
 
 def load_manifest():
     if MANIFEST_FILE.exists():
-        with open(MANIFEST_FILE) as f:
-            return set(tuple(e) for e in json.load(f))
+        raw = MANIFEST_FILE.read_text().strip()
+        if not raw:
+            return set()
+        try:
+            return set(tuple(e) for e in json.loads(raw))
+        except json.JSONDecodeError:
+            return set()
     return set()
 
 
