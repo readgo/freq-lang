@@ -117,11 +117,11 @@ def _import_and_pack(input_path: Path, output_path: str | None,
     voice = _resolve_voice(eng, voice)
     packager = FreqpackPackager(output_dir, title=course_name, engine=engine, voice=voice)
 
-    # Sentence splitter (phrasplit)
+    # Sentence splitter (sentence-boundary-based)
     try:
-        splitter = get_splitter("phrasplit")
+        splitter = get_splitter("sentence")
     except Exception as e:
-        click.echo(f"Warning: splitter unavailable ({e}), skipping sentence split", err=True)
+        click.echo(f"Warning: sentence splitter unavailable ({e}), using no split", err=True)
         splitter = None
 
     click.echo(f"Processing {len(sentences)} sentences with {engine} ({voice})...")

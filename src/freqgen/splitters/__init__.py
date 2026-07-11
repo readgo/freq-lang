@@ -2,8 +2,11 @@
 
 from .base import SentenceSplitter
 
-def get_splitter(provider: str = "phrasplit") -> SentenceSplitter:
+def get_splitter(provider: str = "sentence") -> SentenceSplitter:
     """Factory: return a SentenceSplitter by name."""
+    if provider == "sentence":
+        from .sentencesplit import SentenceBoundarySplitter
+        return SentenceBoundarySplitter()
     if provider == "phrasplit":
         from .phrasplit import PhrasplitSplitter
         return PhrasplitSplitter()
