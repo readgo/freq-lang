@@ -45,13 +45,19 @@ IDS = {
     "daily_news_cat": "0225ae09-5d63-41c2-bd75-693985d07d78",
     "courses": {
         "Business & Politics": "838db612-5db8-4f6f-9ca7-8643e42de879",
+        "Culture & Society": "1a633e68-dba4-4cba-857a-a9dca82b92c1",
+        "Health & Lifestyle": "80531599-4b8d-43b6-ad11-e4b4f58b7365",
         "Science & Technology": "36c03b50-bbba-481f-a7e4-d2b29d3fa47c",
+        "Travel & Experiences": "06fb2b41-5ebc-4dc8-aea9-779bb60c2224",
     },
 }
 
 COURSE_META = {
     "Business & Politics": {"key": "business", "slug": "business-politics"},
+    "Culture & Society": {"key": "culture", "slug": "culture-society"},
+    "Health & Lifestyle": {"key": "health", "slug": "health-lifestyle"},
     "Science & Technology": {"key": "science", "slug": "science-technology"},
+    "Travel & Experiences": {"key": "travel", "slug": "travel-experiences"},
 }
 
 session = requests.Session()

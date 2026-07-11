@@ -65,14 +65,13 @@ jobs:
         run: |
           DATE_TAG="packs-$(date +%Y%m%d)"
           BASE="release-packs/EngooNews"
-          mkdir -p "$BASE/business-politics" "$BASE/science-technology"
+          mkdir -p "$BASE/business-politics" "$BASE/culture-society" "$BASE/health-lifestyle" "$BASE/science-technology" "$BASE/travel-experiences"
 
-          if [ -d engoo_news/business-politics ]; then
-            cp engoo_news/business-politics/*.freqpack "$BASE/business-politics/" 2>/dev/null || true
-          fi
-          if [ -d engoo_news/science-technology ]; then
-            cp engoo_news/science-technology/*.freqpack "$BASE/science-technology/" 2>/dev/null || true
-          fi
+          for cat in business-politics culture-society health-lifestyle science-technology travel-experiences; do
+            if [ -d "engoo_news/$cat" ]; then
+              cp "engoo_news/$cat/"*.freqpack "$BASE/$cat/" 2>/dev/null || true
+            fi
+          done
 
           HAS_PACKS=false
           for d in "$BASE"/*/; do

@@ -9,6 +9,7 @@ from .engines import get_engine
 from .engines.base import GenerationResult
 from .packager import FreqpackPackager
 from .splitters import get_splitter
+from .text_processor import preprocess_for_tts, clean_display_text
 
 
 @click.command()
@@ -129,20 +130,25 @@ def _import_and_pack(input_path: Path, output_path: str | None,
         wav_path = output_dir / "audio" / f"sent_{i:04d}.wav"
         wav_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Generate full sentence TTS
+        # Preprocess: prn markers + number-to-words
+        display_sent = clean_display_text(sent)
+        tts_sent = preprocess_for_tts(sent)
+        log_sent = display_sent[:60]
+
+        # Generate full sentence TTS (using processed text)
         try:
-            result = eng.generate(sent, voice=voice, output_path=wav_path)
+            result = eng.generate(tts_sent, voice=voice, output_path=wav_path)
         except Exception as e:
-            click.echo(f"  [ERROR] [{i+1}] {sent[:60]}: {e}", err=True)
+            click.echo(f"  [ERROR] [{i+1}] {log_sent}: {e}", err=True)
             continue
 
-        # Split sentence if splitter available
+        # Split sentence if splitter available (split on TTS text)
         segments: list[GenerationResult] = []
         segment_texts: list[str] = []
         if splitter:
-            short_texts = splitter.split(sent)
+            short_texts = splitter.split(tts_sent)
             if len(short_texts) > 1:
-                click.echo(f"  [{i+1}/{len(sentences)}] split into {len(short_texts)} parts: {short_texts}")
+                click.echo(f"  [{i+1}/{len(sentences)}] split into {len(short_texts)} parts")
                 for seg_idx, seg_text in enumerate(short_texts):
                     seg_path = output_dir / "audio" / f"sent_{i:04d}_{seg_idx:02d}.wav"
                     try:
@@ -153,11 +159,12 @@ def _import_and_pack(input_path: Path, output_path: str | None,
                         click.echo(f"  [SEGMENT ERROR] {seg_text[:40]}: {e}", err=True)
                         break
 
-        packager.add_sentence(result, i, text=sent,
+        # Store display text in course.json, use preprocessed text for TTS segments
+        packager.add_sentence(result, i, text=display_sent,
                               segments=segments if segments else None,
                               segment_texts=segment_texts if segment_texts else None)
 
-        click.echo(f"  [{i+1}/{len(sentences)}] {sent[:60]}")
+        click.echo(f"  [{i+1}/{len(sentences)}] {log_sent}")
 
     packager.write()
 

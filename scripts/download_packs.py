@@ -4,8 +4,11 @@ Download latest .freqpack Release from GitHub (public repo, no token needed).
 
 Extracts to:
   EngooNews/
-    ├── business-politics/day-20260705-xxx.freqpack
-    └── science-technology/day-20260704-xxx.freqpack
+    ├── business-politics/day-YYYYMMDD-xxx.freqpack
+    ├── culture-society/day-YYYYMMDD-xxx.freqpack
+    ├── health-lifestyle/day-YYYYMMDD-xxx.freqpack
+    ├── science-technology/day-YYYYMMDD-xxx.freqpack
+    └── travel-experiences/day-YYYYMMDD-xxx.freqpack
 
 Usage:
     python scripts/download_packs.py                  # latest release
