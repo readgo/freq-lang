@@ -24,7 +24,9 @@ from .text_processor import preprocess_for_tts, clean_display_text
 @click.option("-e", "--engine", default="kokoro", help="TTS engine (kokoro/piper)")
 @click.option("-c", "--category", default=None,
               help="Course category slug (e.g. business-politics, science-technology)")
-def main(input: str, output_path: str, voice: str | None, engine: str, category: str | None):
+@click.option("-s", "--splitter", default="auto",
+              help="Segment splitter: auto, nlp, rules, phrasplit (default: auto)")
+def main(input: str, output_path: str, voice: str | None, engine: str, category: str | None, splitter: str):
     """freqgen — generate .freqpack English learning courses with TTS.
 
     Usage:
@@ -45,9 +47,10 @@ def main(input: str, output_path: str, voice: str | None, engine: str, category:
     input_path = Path(input)
 
     if input_path.is_dir():
-        _batch_import(input_path, output_path, voice, engine, category)
+        _batch_import(input_path, output_path, voice, engine, category, splitter)
     elif input_path.exists() and input_path.is_file():
-        _import_and_pack(input_path, output_path, voice, engine, category=category)
+        _import_and_pack(input_path, output_path, voice, engine,
+                         category=category, splitter=splitter)
     elif not input_path.exists():
         _speak(input, voice, engine, output_path)
     else:
@@ -90,7 +93,8 @@ def _import_and_pack(input_path: Path, output_path: str | None,
                     voice: str | None, engine: str,
                     output_dir_override: Path | None = None,
                     freqpack_dir_override: Path | None = None,
-                    category: str | None = None):
+                    category: str | None = None,
+                    splitter: str = "auto"):
     """Convert a .txt file to .freqpack."""
     with open(input_path, "r", encoding="utf-8") as f:
         paragraphs = [line.strip() for line in f if line.strip()]
@@ -143,13 +147,14 @@ def _import_and_pack(input_path: Path, output_path: str | None,
     click.echo(f"Found {len(paragraphs)} paragraph(s), split into {len(all_sentences)} sentence(s)")
     click.echo(f"Processing with {engine} ({voice})...")
 
-    # ── Step 2: Load segment splitter (phrasplit, for read-along segments) ──
-    # Within each sentence, we split into shorter ~45-char chunks
+    # ── Step 2: Load segment splitter (for read-along segments) ──
+    # Within each sentence, we split into shorter chunks
     # so users can practice read-along with natural pauses
     try:
-        seg_splitter = get_splitter("phrasplit")
+        seg_splitter = get_splitter(splitter)
+        click.echo(f"Segment splitter: {splitter}")
     except Exception as e:
-        click.echo(f"Warning: phrasplit unavailable ({e}), no read-along segments", err=True)
+        click.echo(f"Warning: segment splitter '{splitter}' unavailable ({e})", err=True)
         seg_splitter = None
 
     # ── Step 3: Process each sentence ──
@@ -205,7 +210,7 @@ def _import_and_pack(input_path: Path, output_path: str | None,
         sys.exit(1)
 
 
-def _batch_import(input_dir: Path, output_path: str | None, voice: str | None, engine: str, default_category: str | None = None):
+def _batch_import(input_dir: Path, output_path: str | None, voice: str | None, engine: str, default_category: str | None = None, splitter: str = "auto"):
     """Convert all .txt files in a directory to .freqpack."""
     txt_files = sorted(input_dir.rglob("*.txt"))
     if not txt_files:
@@ -235,7 +240,8 @@ def _batch_import(input_dir: Path, output_path: str | None, voice: str | None, e
         _import_and_pack(txt_file, None, voice, engine,
                          output_dir_override=out_dir,
                          freqpack_dir_override=courses_dir,
-                         category=file_category)
+                         category=file_category,
+                         splitter=splitter)
         click.echo()
 
     click.echo(f"Batch complete: {len(txt_files)} course(s) created in output/{input_dir.name}/")

@@ -122,17 +122,31 @@ Kokoro 的 `generate_with_timestamps` 内部：
 4. 与 Kokoro 生成的实际音频时长同步
 
 Piper 目前不支持词级时间戳（`generate_with_timestamps` 未实现）。
-### 长句拆分（phrasplit split_long_lines）
+### 长句拆分（语法感知分段）
 
-用户原始 `sentences.txt` 中一行可能包含多句合并段落（如新闻段落），或单个长句。
+用户原始 `sentences.txt` 中一行可能包含多句合并段落（如新闻段落），或单个长句。系统分两级拆分：
 
-`PhrasplitSplitter` 使用 `phrasplit.split_long_lines(max_length=45, use_spacy=False)` 拆分为跟读片段：
+**句子级**（SentenceBoundarySplitter）：在 `. ! ?` 句末标点处拆成完整句子。
 
-1. **句子边界优先**：在 `.!?` 句末标点处拆分
-2. **逗号/分号次之**：若仍超长，在 `,;` 处拆分
-3. **词边界兜底**：若仍超长，在最近空格处截断
+**短语级**（三段式策略，自动选择最优可用分句器）:
 
-`max_length=45` 为跟读场景目标长度，片段完整且节奏清晰。
+1. **NLP 依存句法**（`nlp` 模式）— 使用 spaCy `en_core_web_sm` 进行依存句法分析，在子句边界（并列句 `conj`、状语从句 `advcl`、关系从句 `relcl`、补语从句 `ccomp`、长介词短语 `prep`）拆分。每段是一棵完整语法子树。
+2. **改进规则**（`rules` 模式）— 语法关键词拆分 + 后处理合并。优先在并列/从属连词处拆分，然后是长介词短语边界。不拆分冠词/介词残留段。
+3. **原始 phrasplit**（`phrasplit` 模式）— `split_long_lines(max_length=45)` 作为兜底。
+
+**后处理（三段共用）:**
+- **短段合并**：<18字符的段吸收到相邻段
+- **语法边缘修复**：段末若以冠词/介词(a/an/the/to/of)结尾 → 推至下段；段首若以冠词/介词(a/an/the/to/of)起头 → 合并回前段
+
+CLI 通过 `--splitter` 选择模式：
+```bash
+freqgen sentences.txt                    # auto（默认：优先 nlp → rules → phrasplit）
+freqgen sentences.txt --splitter nlp     # spaCy 依存句法
+freqgen sentences.txt --splitter rules   # 改进规则
+freqgen sentences.txt --splitter phrasplit  # 原始按字数拆分
+```
+
+对比效果见 `example/SPLIT_COMPARISON.md`。
 ### 停顿检测算法
 
 对 Kokoro 生成的 WAV 音频进行 RMS 能量分析：
@@ -208,6 +222,13 @@ freq-lang/
 │   ├── __init__.py
 │   ├── cli.py              # Click CLI 入口（单命令入口）
 │   ├── packager.py         # .freqpack 打包（course.json + zip）
+│   ├── categories.py       # 课程分类注册表
+│   ├── splitters/
+│   │   ├── __init__.py     # Factory + auto-select
+│   │   ├── base.py         # SentenceSplitter 抽象基类
+│   │   ├── sentencesplit.py # 句子边界拆分 (. ! ?)
+│   │   ├── phrasplit.py    # 改进规则拆分 + 后处理
+│   │   └── nlpsplit.py     # spaCy 依存句法拆分
 │   └── engines/
 │       ├── __init__.py
 │       ├── base.py         # TTSEngine 抽象基类 + 数据类
