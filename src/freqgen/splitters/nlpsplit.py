@@ -122,8 +122,8 @@ class NlpSplitter(SentenceSplitter):
 
             # ── Relative clauses (who/which/that) ──
             elif token.dep_ == "relcl":
-                # Check the head's children for the relative pronoun
-                rels = [c for c in token.head.children
+                # The relative pronoun is a child of the relcl verb, not its head
+                rels = [c for c in token.children
                         if c.dep_ in ("nsubj", "nsubjpass", "relcl")
                         and c.text.lower() in ("who", "which", "that")
                         and c.idx > 0]
