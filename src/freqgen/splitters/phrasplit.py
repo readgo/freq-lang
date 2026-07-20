@@ -14,7 +14,7 @@ from phrasplit import split_long_lines
 from .base import SentenceSplitter
 
 _MAX_LENGTH = 45
-_MIN_SEG_LEN = 18
+_MIN_SEG_LEN = 22
 _HARD_MAX = 65
 
 # Conjunction words marking clause boundaries
@@ -39,7 +39,14 @@ _TRANSITIONS = {"however", "meanwhile", "nevertheless", "therefore",
 # Words that should NOT end a segment (push to next segment instead)
 _BAD_SEGMENT_END = {"a", "an", "the", "to", "in", "on", "at", "for",
                     "with", "by", "of", "and", "or", "but", "nor", "yet"}
-# Words that should NOT start a segment (merge backward)
+_PRONOUNS = {"you", "me", "him", "her", "us", "them"}
+
+# Auxiliary verbs that indicate a clause continuation
+_AUXILIARIES = {"don't", "doesn't", "didn't", "won't", "wouldn't",
+                "can't", "couldn't", "shouldn't", "mightn't", "mustn't",
+                "is", "are", "was", "were", "has", "have", "had",
+                "do", "does", "did", "will", "would", "can", "could",
+                "should", "may", "might", "must", "shall"}
 _BAD_SEGMENT_START = {"a", "an", "to", "of"}
 
 
@@ -74,6 +81,9 @@ class PhrasplitSplitter(SentenceSplitter):
 
         # Step 2b: Fix segments ending/starting with bad tokens
         parts = self._fix_ragged_edges(parts)
+
+        # Step 2c: Re-merge segments split mid-clause (pronoun + auxiliary continuation)
+        parts = self._merge_broken_clauses(parts)
 
         # Step 3: If any segment still exceeds _HARD_MAX, re-split it with grammar cues
         final = []
@@ -124,6 +134,13 @@ class PhrasplitSplitter(SentenceSplitter):
                 if left_len > 25:
                     candidates.append(i)
 
+            # Em-dash / en-dash — natural clause boundary
+            if tokens[i] in ("\u2014", "\u2013", "—", "–"):
+                left_len = sum(len(t) + 1 for t in tokens[:i])
+                right_len = sum(len(t) + 1 for t in tokens[i:])
+                if left_len > 15 and right_len > 15:
+                    candidates.append(i)
+
         if not candidates:
             # Fallback: split at last space before position 50
             char_count = 0
@@ -134,8 +151,9 @@ class PhrasplitSplitter(SentenceSplitter):
             return [text]
 
         # Pick the candidate closest to the middle of the text
+        # Em-dash/en-dash get a 3-position bias toward middle (they're stronger boundaries)
         mid = len(tokens) // 2
-        best = min(candidates, key=lambda i: abs(i - mid))
+        best = min(candidates, key=lambda i: abs(i - mid) - (3 if tokens[i] in ("\u2014", "\u2013", "\u2014", "\u2013") else 0))
         left = " ".join(tokens[:best])
         right = " ".join(tokens[best:])
 
@@ -149,6 +167,44 @@ class PhrasplitSplitter(SentenceSplitter):
             else:
                 final.append(seg)
         return final
+
+    def _merge_broken_clauses(self, segments: list[str]) -> list[str]:
+        """Re-merge segments split mid-clause at pronoun boundaries.
+
+        E.g. "something you" + "don't know how to do" → "something you don't know how to do"
+        Pattern: segment ends with pronoun, next segment starts with lowercase auxiliary.
+        """
+        if len(segments) <= 1:
+            return segments
+
+        result = []
+        i = 0
+        while i < len(segments):
+            cur = segments[i]
+            if i + 1 >= len(segments):
+                result.append(cur)
+                break
+
+            # Check: does current segment end with a pronoun?
+            cur_words = cur.split()
+            if cur_words:
+                last = cur_words[-1].strip('",;:!?.-—\u2013\u2014"\'')
+                if last.lower() in _PRONOUNS:
+                    # Check: does next segment start with a lowercase auxiliary?
+                    next_words = segments[i + 1].split()
+                    if next_words:
+                        first = next_words[0].strip('",;:!?.-—\u2013\u2014"\'')
+                        if first.lower() in _AUXILIARIES:
+                            # Merge and continue
+                            merged = cur + " " + segments[i + 1]
+                            result.append(merged)
+                            i += 2
+                            continue
+
+            result.append(cur)
+            i += 1
+
+        return result
 
     def _fix_ragged_edges(self, segments: list[str]) -> list[str]:
         """Fix segments ending with articles/prepositions or starting with orphans.
@@ -177,6 +233,13 @@ class PhrasplitSplitter(SentenceSplitter):
             # Keep checking last word and pushing until clean
             while words:
                 last_word = words[-1].strip('",;:!?.-—\u2013\u2014"\'')
+                # Don't push across a sentence boundary — if dropping the last word
+                # reveals a word ending with .!?, the bad word is actually just
+                # part of a complete sentence conclusion.
+                if len(words) >= 2:
+                    penultimate = words[-2]
+                    if penultimate[-1] in ".!?":
+                        break
                 if last_word.lower() in _BAD_SEGMENT_END:
                     segments[i + 1] = words[-1] + " " + segments[i + 1]
                     words = words[:-1]
@@ -200,8 +263,13 @@ class PhrasplitSplitter(SentenceSplitter):
 
             first_word = cur.split()[0].strip('",;:!?.-—"\'')
             if first_word.lower() in _BAD_SEGMENT_START and result:
-                # Merge with previous segment
-                result[-1] = result[-1] + " " + cur
+                # Merge with previous segment (but don't recreate overlong segments)
+                merged = result[-1] + " " + cur
+                if len(merged) <= _HARD_MAX:
+                    result[-1] = merged
+                else:
+                    # Can't merge without exceeding max → keep separate
+                    result.append(cur)
             else:
                 result.append(cur)
             i += 1
@@ -217,12 +285,42 @@ class PhrasplitSplitter(SentenceSplitter):
         i = 0
         while i < len(segments):
             cur = segments[i]
+            stripped = cur.strip()
 
             # Short segment with a successor → try to merge
             if len(cur) < _MIN_SEG_LEN and i + 1 < len(segments):
+                # ── Sentence boundary guard ──
+                # If the short segment ends with .!?, it's a complete sentence.
+                # Never merge it forward (would cross sentence boundaries).
+                # Prefer backward merge; if that fails, keep as-is.
+                if stripped and stripped[-1] in ".!?":
+                    if result:
+                        prev = result[-1] + " " + cur
+                        if len(prev) <= _HARD_MAX + 10:
+                            result[-1] = prev
+                            i += 1
+                            continue
+                    # Can't merge backward either → keep as complete sentence
+                    result.append(cur)
+                    i += 1
+                    continue
+
                 # If the short segment ends with comma, prefer backward merge
-                # (avoids pulling comma-bound phrases into wrong segment)
-                if cur.rstrip().endswith(",") and result:
+                # But not if the previous segment ends a sentence (.!?)
+                if stripped.endswith(",") and result:
+                    prev_text = result[-1].strip()
+                    if prev_text and prev_text[-1] in ".!?":
+                        # Previous segment is a complete sentence — don't merge backward
+                        # Try forward merge instead
+                        merged = cur + " " + segments[i + 1]
+                        if len(merged) <= _HARD_MAX + 10:
+                            result.append(merged)
+                            i += 2
+                            continue
+                        # Forward also fails → keep as-is
+                        result.append(cur)
+                        i += 1
+                        continue
                     prev = result[-1] + " " + cur
                     if len(prev) <= _HARD_MAX + 10:
                         result[-1] = prev
@@ -254,8 +352,17 @@ class PhrasplitSplitter(SentenceSplitter):
                 i += 1
                 continue
 
-            # Last segment too short → merge backward
+            # Last segment too short → merge backward (respect sentence boundary)
             if len(cur) < _MIN_SEG_LEN and result:
+                stripped = cur.strip()
+                if stripped and stripped[-1] in ".!?":
+                    # Complete sentence — try backward merge, keep if too long
+                    prev = result[-1] + " " + cur
+                    if len(prev) <= _HARD_MAX + 10:
+                        result[-1] = prev
+                        i += 1
+                        continue
+                # Not sentence-ending or backward merge failed → merge anyway
                 result[-1] = result[-1] + " " + cur
                 i += 1
                 continue
