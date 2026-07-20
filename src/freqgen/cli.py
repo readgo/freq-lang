@@ -25,7 +25,7 @@ from .text_processor import preprocess_for_tts, clean_display_text
 @click.option("-c", "--category", default=None,
               help="Course category slug (e.g. business-politics, science-technology)")
 @click.option("-s", "--splitter", default="auto",
-              help="Segment splitter: auto, nlp, rules, phrasplit (default: auto)")
+              help="Segment splitter: auto, rules, phrasplit (default: auto)")
 def main(input: str, output_path: str, voice: str | None, engine: str, category: str | None, splitter: str):
     """freqgen — generate .freqpack English learning courses with TTS.
 
