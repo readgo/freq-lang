@@ -184,7 +184,15 @@ def _convert_numbers_to_words(text: str) -> str:
         text
     )
     
-    # 4. Plain numbers with commas (e.g., "2,000", "5,400")
+    # 4. Standalone decimals: 2.4, 0.5, 3.14
+    # (must come after % pattern to avoid stealing 6.5 from 6.5%)
+    text = re.sub(
+        r'(?<!\w)(\d+\.\d+)(?!\w)',
+        lambda m: integer_to_words(m.group(1)),
+        text
+    )
+
+    # 5. Plain numbers with commas (e.g., "2,000", "5,400")
     # These are the main problem case for Kokoro
     text = re.sub(
         r'(?<!\w)(\d{1,3},\d{3}(?:,\d{3})*)(?!\w)',
