@@ -92,65 +92,66 @@ class NlpSplitter(SentenceSplitter):
         return segments if len(segments) > 1 else [text]
 
     def _split_by_deps(self, text: str) -> list[str]:
-        """Split using spaCy dependency parse."""
+        """Split using spaCy dependency parse.
+
+        Uses token.idx (character offset) for all string slicing,
+        not token.i (sequential token index).
+        """
         doc = self._nlp(text)
-        split_positions = set()
+        # Collect character-offset split points
+        split_chars: set[int] = set()
 
         for token in doc:
             # ── Coordinated clauses (and/but/or) ──
             if token.dep_ == "conj" and token.pos_ == "CCONJ":
-                # Split before the conjunction
-                split_positions.add(token.i)
+                split_chars.add(token.idx)
 
             # ── Adverbial clauses (because/although/when/if) ──
             elif token.dep_ == "advcl":
-                # Find the subordinating conjunction (marker)
                 markers = [c for c in token.children if c.dep_ == "mark"]
                 if markers:
-                    split_positions.add(markers[0].i)
-                elif token.i > 0:
-                    split_positions.add(token.i)
+                    split_chars.add(markers[0].idx)
+                elif token.idx > 0:
+                    split_chars.add(token.idx)
 
             # ── Complement clauses (that...) ──
             elif token.dep_ == "ccomp":
                 markers = [c for c in token.children if c.dep_ == "mark"]
                 if markers:
-                    split_positions.add(markers[0].i)
+                    split_chars.add(markers[0].idx)
 
             # ── Relative clauses (who/which/that) ──
             elif token.dep_ == "relcl":
-                # Find the relative pronoun
+                # Check the head's children for the relative pronoun
                 rels = [c for c in token.head.children
-                        if c.dep_ in ("nsubj", "nsubjpass")
-                        and c.text.lower() in ("who", "which", "that")]
-                if rels and rels[0].i > 0:
-                    split_positions.add(rels[0].i)
+                        if c.dep_ in ("nsubj", "nsubjpass", "relcl")
+                        and c.text.lower() in ("who", "which", "that")
+                        and c.idx > 0]
+                if rels:
+                    split_chars.add(rels[0].idx)
 
             # ── Long prepositional phrases ──
-            elif token.dep_ == "prep" and token.i > 0:
-                subtree_len = max(t.i for t in token.subtree) - token.i
-                if subtree_len >= 10:
-                    split_positions.add(token.i)
+            elif token.dep_ == "prep" and token.idx > 0:
+                subtree_len = max(t.idx + len(t.text) for t in token.subtree) - token.idx
+                if subtree_len >= 50:  # ≥50 characters = long PP
+                    split_chars.add(token.idx)
 
-        # Apply splits in reverse order (preserve span positions)
-        splits = sorted(split_positions)
+        # Apply splits in ascending character order
+        splits = sorted(split_chars)
         spans = []
         prev = 0
         for pos in splits:
+            if pos <= prev:
+                continue
             span_text = text[prev:pos].strip()
             if span_text:
                 spans.append(span_text)
             prev = pos
-        # Last span
         remaining = text[prev:].strip()
         if remaining:
             spans.append(remaining)
 
-        # If no splits found or only one span, return original
-        if len(spans) <= 1:
-            return [text]
-
-        return spans
+        return spans if len(spans) > 1 else [text]
 
     def _split_by_rules(self, text: str) -> list[str]:
         """Rule-based split with grammar cues (fallback when spaCy unavailable)."""
