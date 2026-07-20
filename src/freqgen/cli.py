@@ -180,12 +180,18 @@ def _import_and_pack(input_path: Path, output_path: str | None,
         if seg_splitter:
             short_texts = seg_splitter.split(tts_sent)
             if len(short_texts) > 1:
+                # Also split display text for segment display texts
+                display_parts = seg_splitter.split(display_sent)
                 for seg_idx, seg_text in enumerate(short_texts):
                     seg_path = output_dir / "audio" / f"sent_{i:04d}_{seg_idx:02d}.wav"
                     try:
                         seg_result = eng.generate(seg_text, voice=voice, output_path=seg_path)
                         segments.append(seg_result)
-                        segment_texts.append(seg_text)
+                        # Use display text if split counts match, otherwise fallback
+                        if len(short_texts) == len(display_parts) and seg_idx < len(display_parts):
+                            segment_texts.append(display_parts[seg_idx])
+                        else:
+                            segment_texts.append(seg_text)
                     except Exception as e:
                         click.echo(f"  [SEGMENT ERROR] {seg_text[:40]}: {e}", err=True)
                         break
