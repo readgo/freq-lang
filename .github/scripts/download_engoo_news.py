@@ -233,9 +233,11 @@ def get_pack_path(course_slug, title, date_str):
     return cat_dir / fname
 
 
-def run_freqgen(txt_path, pack_path):
+def run_freqgen(txt_path, pack_path, course_slug=None):
     pack_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [FREQGEN_CMD, str(txt_path), "-o", str(pack_path)]
+    if course_slug:
+        cmd += ["--category", course_slug]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode == 0:
@@ -345,7 +347,7 @@ def main():
                 if args.dry_run:
                     print(f"    → pack: {pack_path.name}")
                 else:
-                    ok = run_freqgen(txt, pack_path)
+                    ok = run_freqgen(txt, pack_path, course_slug=course["slug"])
                     if ok:
                         total_packs += 1
                     time.sleep(0.3)

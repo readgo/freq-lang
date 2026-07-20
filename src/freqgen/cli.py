@@ -5,6 +5,8 @@ from pathlib import Path
 
 import click
 
+from .categories import list_categories as _list_categories
+from .categories import auto_detect_category as _auto_detect_category
 from .engines import get_engine
 from .engines.base import GenerationResult
 from .packager import FreqpackPackager
@@ -20,7 +22,9 @@ from .text_processor import preprocess_for_tts, clean_display_text
 @click.option("-v", "--voice", default=None,
               help="Voice name (default: engine's first available voice)")
 @click.option("-e", "--engine", default="kokoro", help="TTS engine (kokoro/piper)")
-def main(input: str, output_path: str, voice: str | None, engine: str):
+@click.option("-c", "--category", default=None,
+              help="Course category slug (e.g. business-politics, science-technology)")
+def main(input: str, output_path: str, voice: str | None, engine: str, category: str | None):
     """freqgen — generate .freqpack English learning courses with TTS.
 
     Usage:
@@ -32,17 +36,18 @@ def main(input: str, output_path: str, voice: str | None, engine: str):
       freqgen example/                      batch: convert all .txt in directory
     """
     input = input.strip()
-
     if input == "voices":
         _list_voices(engine)
         return
-
+    if input == "categories":
+        _print_category_tree()
+        return
     input_path = Path(input)
 
     if input_path.is_dir():
-        _batch_import(input_path, output_path, voice, engine)
+        _batch_import(input_path, output_path, voice, engine, category)
     elif input_path.exists() and input_path.is_file():
-        _import_and_pack(input_path, output_path, voice, engine)
+        _import_and_pack(input_path, output_path, voice, engine, category=category)
     elif not input_path.exists():
         _speak(input, voice, engine, output_path)
     else:
@@ -84,7 +89,8 @@ def _speak(text: str, voice: str | None, engine: str, output_path: str | None):
 def _import_and_pack(input_path: Path, output_path: str | None,
                     voice: str | None, engine: str,
                     output_dir_override: Path | None = None,
-                    freqpack_dir_override: Path | None = None):
+                    freqpack_dir_override: Path | None = None,
+                    category: str | None = None):
     """Convert a .txt file to .freqpack."""
     with open(input_path, "r", encoding="utf-8") as f:
         paragraphs = [line.strip() for line in f if line.strip()]
@@ -115,7 +121,7 @@ def _import_and_pack(input_path: Path, output_path: str | None,
         sys.exit(1)
 
     voice = _resolve_voice(eng, voice)
-    packager = FreqpackPackager(output_dir, title=course_name, engine=engine, voice=voice)
+    packager = FreqpackPackager(output_dir, title=course_name, engine=engine, voice=voice, category=category or "")
 
     # ── Step 1: Split paragraphs into individual sentences ──
     # Each .txt line may contain multiple sentences (separated by . ! ?)
@@ -199,7 +205,7 @@ def _import_and_pack(input_path: Path, output_path: str | None,
         sys.exit(1)
 
 
-def _batch_import(input_dir: Path, output_path: str | None, voice: str | None, engine: str):
+def _batch_import(input_dir: Path, output_path: str | None, voice: str | None, engine: str, default_category: str | None = None):
     """Convert all .txt files in a directory to .freqpack."""
     txt_files = sorted(input_dir.rglob("*.txt"))
     if not txt_files:
@@ -218,13 +224,18 @@ def _batch_import(input_dir: Path, output_path: str | None, voice: str | None, e
 
         if not rel_dir_parts:
             out_dir = batch_root / txt_file.stem
+            file_category = default_category
         else:
             out_dir = batch_root / Path(*rel_dir_parts) / txt_file.stem
+            # Auto-detect category from the first directory level
+            file_category = _auto_detect_category(Path(rel_dir_parts[0])) or default_category
 
         click.echo(f"--- Processing: {txt_file.name} ---")
+        click.echo(f"     Category: {file_category or '(none)'}")
         _import_and_pack(txt_file, None, voice, engine,
                          output_dir_override=out_dir,
-                         freqpack_dir_override=courses_dir)
+                         freqpack_dir_override=courses_dir,
+                         category=file_category)
         click.echo()
 
     click.echo(f"Batch complete: {len(txt_files)} course(s) created in output/{input_dir.name}/")
@@ -238,7 +249,13 @@ def _list_voices(engine: str):
             click.echo(f"  {v}")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+
+
+def _print_category_tree():
+    """Display the available category tree."""
+    click.echo("Available categories:")
+    for slug, name in _list_categories():
+        click.echo(f"  {slug:25s} {name}")
 
 
 if __name__ == "__main__":

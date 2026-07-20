@@ -192,7 +192,9 @@ Piper 不支持精确停顿检测，返回 `pauses=[]`。
   "title": "sentences",
   "language": "en",
   "engine": "kokoro",
-  "voice": "af_sarah"
+  "voice": "af_sarah",
+  "category": "business-politics",
+  "category_name": "Business & Politics"
 }
 ```
 
@@ -256,7 +258,76 @@ class MyEngine(TTSEngine):
 
 ---
 
-## 9. 待定 / 已解决
+## 9. 分类目录树 (Categories)
+
+### 9.1 定义
+
+课程分类集中定义在 `src/freqgen/categories.py`，对应 Engoo Daily News 的五大类：
+
+| Slug | 显示名 |
+|------|--------|
+| `business-politics` | Business & Politics |
+| `culture-society` | Culture & Society |
+| `health-lifestyle` | Health & Lifestyle |
+| `science-technology` | Science & Technology |
+| `travel-experiences` | Travel & Experiences |
+
+### 9.2 CLI 用法
+
+```bash
+# 列出所有分类
+freqgen categories
+
+# 单文件导入时指定分类
+freqgen sentences.txt --category business-politics
+
+# 批量导入时自动检测目录名（如 EngooNews/business-politics/*.txt → business-politics）
+freqgen EngooNews/
+```
+
+### 9.3 批量自动检测
+
+`freqgen <directory>` 遍历子目录时，从文件所在的第一级目录名自动匹配分类 slug。匹配不到则留空，向后兼容。
+
+### 9.4 元数据存储
+
+分类信息写入 `.freqpack` 中的 `meta.json`：
+
+```json
+{
+  "title": "...",
+  "category": "business-politics",
+  "category_name": "Business & Politics"
+}
+```
+
+不传 `--category` 时，meta.json 不包含 `category`/`category_name` 字段，保持向后兼容。
+
+---
+
+## 10. CI 与 Manifest
+
+### 10.1 去重 Manifest
+
+`engoo_manifest.json` 记录已处理的文章（slug, date, title），避免重复生成。
+
+### 10.2 存储位置
+
+该文件**不再通过 git 跟踪**，而是作为 **GitHub Release 的附件**存储：
+
+- **读取**：CI 启动时 `gh release download latest --pattern "engoo_manifest.json"`
+- **写入**：Release 创建/更新时 `gh release upload <tag> engoo_manifest.json --clobber`
+- **首次运行**：无 Release 时自动初始化为 `[]`
+
+### 10.3 优点
+
+- 主分支不再因每日 Manifest 更新产生 git 提交
+- Release 永不过期（比 Actions Cache 可靠）
+- Manifest 与同一天的 .freqpack 版本绑定
+
+---
+
+## 11. 待定 / 已解决
 
 | 问题 | 状态 |
 |------|------|

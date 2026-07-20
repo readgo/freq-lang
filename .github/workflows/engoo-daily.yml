@@ -42,24 +42,18 @@ jobs:
               "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/$f"
           done
 
+      - name: Download manifest from latest release
+        run: |
+          gh release download latest --pattern "engoo_manifest.json" \
+            --dir .github/ 2>/dev/null || echo "[]" > .github/engoo_manifest.json
+          echo "Manifest has $(wc -l < .github/engoo_manifest.json) line(s)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Download articles and generate packs
         run: |
           python .github/scripts/download_engoo_news.py \
             --limit ${{ github.event.inputs.limit || '10' }}
-
-      - name: Commit manifest
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          if [ -f .github/engoo_manifest.json ]; then
-            git add -f .github/engoo_manifest.json
-          fi
-          if git diff --cached --quiet; then
-            echo "No new articles"
-          else
-            git commit -m "chore: update engoo manifest $(date +%Y-%m-%d)"
-            git push
-          fi
 
       - name: Package and create release
         run: |
@@ -86,8 +80,12 @@ jobs:
             gh release create "$DATE_TAG" \
               --title "Engoo News $DATE_TAG" \
               --notes "Daily .freqpack files from Engoo Daily News." \
-              "release-packs/${DATE_TAG}.zip" 2>/dev/null || \
-            gh release upload "$DATE_TAG" "release-packs/${DATE_TAG}.zip" --clobber
+              "release-packs/${DATE_TAG}.zip" \
+              ".github/engoo_manifest.json" 2>/dev/null || \
+            gh release upload "$DATE_TAG" \
+              "release-packs/${DATE_TAG}.zip" \
+              ".github/engoo_manifest.json" \
+              --clobber
           fi
         env:
           GH_TOKEN: ${{ github.token }}

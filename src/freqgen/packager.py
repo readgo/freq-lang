@@ -6,6 +6,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .categories import resolve_category as _resolve_category
 from .engines.base import GenerationResult
 
 
@@ -16,9 +17,16 @@ class FreqpackMeta:
     version: str = "1.0"
     engine: str = ""
     voice: str = ""
+    category: str = ""
+    category_name: str = ""
 
     def to_dict(self):
-        return asdict(self)
+        d = asdict(self)
+        # Omit category fields when not set (backward compat)
+        if not d.get("category"):
+            d.pop("category", None)
+            d.pop("category_name", None)
+        return d
 
 
 @dataclass
@@ -63,7 +71,7 @@ class FreqpackPackager:
     """Package generated audio into a .freqpack zip."""
 
     def __init__(self, output_dir: Path, title: str = "My Course",
-                 engine: str = "", voice: str = ""):
+                 engine: str = "", voice: str = "", category: str = ""):
         self.output_dir = Path(output_dir)
         self.audio_dir = self.output_dir / "audio"
         self.audio_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +79,8 @@ class FreqpackPackager:
             title=title,
             engine=engine,
             voice=voice,
+            category=category,
+            category_name=_resolve_category(category) if category else "",
         )
         self.sentences: list[SentenceJSON] = []
 
