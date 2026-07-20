@@ -40,7 +40,7 @@ _TRANSITIONS = {"however", "meanwhile", "nevertheless", "therefore",
 _BAD_SEGMENT_END = {"a", "an", "the", "to", "in", "on", "at", "for",
                     "with", "by", "of", "and", "or", "but", "nor", "yet"}
 # Words that should NOT start a segment (merge backward)
-_BAD_SEGMENT_START = {"a", "an", "the", "to", "of"}
+_BAD_SEGMENT_START = {"a", "an", "to", "of"}
 
 
 class PhrasplitSplitter(SentenceSplitter):
@@ -218,21 +218,37 @@ class PhrasplitSplitter(SentenceSplitter):
         while i < len(segments):
             cur = segments[i]
 
-            # Short segment with a successor → merge forward
+            # Short segment with a successor → try to merge
             if len(cur) < _MIN_SEG_LEN and i + 1 < len(segments):
-                merged = cur + " " + segments[i + 1]
-                if len(merged) <= _HARD_MAX + 10:
-                    result.append(merged)
-                    i += 2
-                    continue
-
-                # Try merge backward instead
-                if result:
+                # If the short segment ends with comma, prefer backward merge
+                # (avoids pulling comma-bound phrases into wrong segment)
+                if cur.rstrip().endswith(",") and result:
                     prev = result[-1] + " " + cur
                     if len(prev) <= _HARD_MAX + 10:
                         result[-1] = prev
                         i += 1
                         continue
+                    # forward as fallback
+                    merged = cur + " " + segments[i + 1]
+                    if len(merged) <= _HARD_MAX + 10:
+                        result.append(merged)
+                        i += 2
+                        continue
+                else:
+                    # Forward merge first
+                    merged = cur + " " + segments[i + 1]
+                    if len(merged) <= _HARD_MAX + 10:
+                        result.append(merged)
+                        i += 2
+                        continue
+
+                    # Try merge backward instead
+                    if result:
+                        prev = result[-1] + " " + cur
+                        if len(prev) <= _HARD_MAX + 10:
+                            result[-1] = prev
+                            i += 1
+                            continue
 
                 result.append(cur)
                 i += 1

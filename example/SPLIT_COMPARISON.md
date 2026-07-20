@@ -12,8 +12,8 @@
     [3]( 9c) Snapchat,
     [4](31c) has unveiled new smart glasses.
   [新] 2 segs:
-    [1](48c) Snap, the company that owns the social media app
-    [2](41c) Snapchat, has unveiled new smart glasses.
+    [1](58c) Snap, the company that owns the social media app Snapchat,
+    [2](31c) has unveiled new smart glasses.
 
 --- P3S1 ---
   ORIG: The augmented reality (AR) glasses, called Specs, will be released later in 2026 at a price of just under $2,200.
@@ -22,10 +22,9 @@
     [2](13c) called Specs,
     [3](44c) will be released later in 2026 at a price of
     [4](18c) just under $2,200.
-  [新] 3 segs:
-    [1](35c) The augmented reality (AR) glasses,
-    [2](36c) called Specs, will be released later
-    [3](40c) in 2026 at a price of just under $2,200.
+  [新] 2 segs:
+    [1](49c) The augmented reality (AR) glasses, called Specs,
+    [2](63c) will be released later in 2026 at a price of just under $2,200.
 
 --- P4S1 ---
   ORIG: AR lets users see digital information and graphics overlaid on the view in front of them.
@@ -56,11 +55,12 @@
     [4](40c) or even show you how to do something you
     [5](45c) don't know how to do — like how to change the
     [6](31c) oil in a car you're looking at.
-  [新] 4 segs:
+  [新] 5 segs:
     [1](41c) Snap's Specs can also listen to questions
-    [2](49c) and display things like directions to a place you
-    [3](55c) want to visit, or even show you how to do something you
-    [4](77c) don't know how to do — like how to change the oil in a car you're looking at.
+    [2](64c) and display things like directions to a place you want to visit,
+    [3](40c) or even show you how to do something you
+    [4](41c) don't know how to do — like how to change
+    [5](35c) the oil in a car you're looking at.
 
 --- P7S1 ---
   ORIG: Snap said the glasses will help people work, create and have fun.
@@ -133,8 +133,8 @@
     [4](19c) at a price of $129.
   [新] 3 segs:
     [1](40c) These aren't Snap's first smart glasses,
-    [2](44c) though — the company released its Spectacles
-    [3](28c) in 2016, at a price of $129.
+    [2](53c) though — the company released its Spectacles in 2016,
+    [3](19c) at a price of $129.
 
 --- P11S2 ---
   ORIG: But those underperformed, with unsold Spectacles costing the company $40 million, the BBC reported in 2017.
@@ -145,8 +145,8 @@
     [4](25c) the BBC reported in 2017.
   [新] 3 segs:
     [1](25c) But those underperformed,
-    [2](42c) with unsold Spectacles costing the company
-    [3](38c) $40 million, the BBC reported in 2017.
+    [2](55c) with unsold Spectacles costing the company $40 million,
+    [3](25c) the BBC reported in 2017.
 
 --- P12S1 ---
   ORIG: Snap's Specs aren't the only smart glasses on the market.
