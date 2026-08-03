@@ -9,6 +9,10 @@ on:
         description: 'Articles per category'
         required: false
         default: '10'
+      rebuild:
+        description: 'Rebuild ALL packs in window (full release, for regenerating courses after generator fixes)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: write
@@ -44,16 +48,16 @@ jobs:
 
       - name: Download manifest from latest release
         run: |
-          gh release download latest --pattern "engoo_manifest.json" \
-            --dir .github/ 2>/dev/null || echo "[]" > .github/engoo_manifest.json
-          echo "Manifest has $(wc -l < .github/engoo_manifest.json) line(s)"
-        env:
-          GH_TOKEN: ${{ github.token }}
+          # manifest 由 download_engoo_news.py 内部通过 GitHub API 下载
+          # （此前用 gh release download 在 runner 上不可靠，导致去重失效、
+          #   每天把整个滚动窗口全部重新生成、release 体积 400MB+）
+          echo "manifest download handled inside download_engoo_news.py"
 
       - name: Download articles and generate packs
         run: |
           python .github/scripts/download_engoo_news.py \
-            --limit ${{ github.event.inputs.limit || '10' }}
+            --limit ${{ github.event.inputs.limit || '10' }} \
+            ${{ github.event.inputs.rebuild == 'true' && '--rebuild' || '' }}
 
       - name: Package and create release
         run: |

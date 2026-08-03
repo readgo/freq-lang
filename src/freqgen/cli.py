@@ -174,26 +174,24 @@ def _import_and_pack(input_path: Path, output_path: str | None,
             click.echo(f"  [ERROR] [{i+1}] {log_sent}: {e}", err=True)
             continue
 
-        # Split into read-along segments (using phrasplit on TTS text)
+        # Split into read-along segments on DISPLAY text so segment boundaries
+        # are natural and segment display keeps original numbers (e.g. "$9,200"
+        # instead of "nine thousand two hundred dollars"). TTS audio is generated
+        # from per-segment number-to-words conversion for correct pronunciation.
         segments: list[GenerationResult] = []
         segment_texts: list[str] = []
         if seg_splitter:
-            short_texts = seg_splitter.split(tts_sent)
-            if len(short_texts) > 1:
-                # Also split display text for segment display texts
-                display_parts = seg_splitter.split(display_sent)
-                for seg_idx, seg_text in enumerate(short_texts):
+            display_parts = seg_splitter.split(display_sent)
+            if len(display_parts) > 1:
+                for seg_idx, disp_text in enumerate(display_parts):
+                    seg_tts = preprocess_for_tts(disp_text)
                     seg_path = output_dir / "audio" / f"sent_{i:04d}_{seg_idx:02d}.wav"
                     try:
-                        seg_result = eng.generate(seg_text, voice=voice, output_path=seg_path)
+                        seg_result = eng.generate(seg_tts, voice=voice, output_path=seg_path)
                         segments.append(seg_result)
-                        # Use display text if split counts match, otherwise fallback
-                        if len(short_texts) == len(display_parts) and seg_idx < len(display_parts):
-                            segment_texts.append(display_parts[seg_idx])
-                        else:
-                            segment_texts.append(seg_text)
+                        segment_texts.append(disp_text)
                     except Exception as e:
-                        click.echo(f"  [SEGMENT ERROR] {seg_text[:40]}: {e}", err=True)
+                        click.echo(f"  [SEGMENT ERROR] {disp_text[:40]}: {e}", err=True)
                         break
 
         # Store display text in course.json, use preprocessed text for TTS segments

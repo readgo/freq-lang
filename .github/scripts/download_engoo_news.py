@@ -66,6 +66,10 @@ session.headers.update({
     "Accept": "application/json, text/plain, */*",
 })
 
+# GitHub release 上的 manifest asset（用于跨 run 去重）
+REPO = "readgo/freq-lang"
+MANIFEST_ASSET_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
+
 
 # ── helpers ────────────────────────────────────────────────────────────
 
@@ -203,6 +207,34 @@ def load_manifest():
     return set()
 
 
+def download_manifest_from_release():
+    """Fetch engoo_manifest.json from the latest GitHub release (public repo).
+
+    以前由 workflow 用 `gh release download` 下载，但在 runner 上不可靠，
+    导致去重失效、每天把整个滚动窗口全部重新生成。改为脚本内部通过
+    GitHub API 下载，失败时打印警告并回退到空 manifest（首次运行场景）。
+    """
+    try:
+        r = session.get(MANIFEST_ASSET_URL, timeout=30)
+        r.raise_for_status()
+        assets = r.json().get("assets", [])
+        url = next(
+            (a["browser_download_url"] for a in assets if a["name"] == "engoo_manifest.json"),
+            None,
+        )
+        if not url:
+            print("  ⚠ latest release has no engoo_manifest.json asset (first run?)")
+            return False
+        mr = session.get(url, timeout=30)
+        mr.raise_for_status()
+        MANIFEST_FILE.write_text(mr.text, encoding="utf-8")
+        print(f"  ✓ manifest downloaded from release ({len(mr.text)} bytes)")
+        return True
+    except Exception as e:
+        print(f"  ⚠ manifest download failed: {e}", file=sys.stderr)
+        return False
+
+
 def save_manifest(processed_set):
     data = sorted([list(e) for e in processed_set])
     with open(MANIFEST_FILE, "w") as f:
@@ -288,7 +320,12 @@ def main():
     if args.dry_run:
         print("Mode: DRY RUN\n")
 
+    # 从 latest release 拉取 manifest 用于跨 run 去重（失败回退空，首次运行场景）
+    if not args.dry_run:
+        download_manifest_from_release()
+
     manifest = load_manifest()
+    print(f"  manifest: {len(manifest)} known article(s)")
     total_new = total_dupes = total_packs = total_skipped = 0
 
     for cat_key in cats:
@@ -319,21 +356,20 @@ def main():
             title = detail["title"]
             date_str = detail["date"]
 
-            if is_processed(course["slug"], title, date_str, manifest):
-                print(f"    → article exists")
+            # delta 模式：manifest 里已有的文章跳过，只处理新增（--rebuild 除外，
+            # rebuild 用于手动全量重新生成，例如修复生成器后重建所有课程）
+            if is_processed(course["slug"], title, date_str, manifest) and not args.rebuild:
+                print(f"    → already published, skip")
                 total_dupes += 1
-                # txt path needed for potential freqgen rebuild below
-                txt = ARTICLES_DIR / course["slug"] / article_filename(title, date_str)
-            else:
-                if args.dry_run:
-                    print(f"    → article: {article_filename(title, date_str)}")
-                else:
-                    txt = save_article(course["slug"], title, date_str, detail["paragraphs"])
-                    print(f"    → article: {txt.name}")
-                total_new += 1
+                continue
 
-            # Mark as processed
-            manifest.add((course["slug"], date_str, title))
+            if args.dry_run:
+                print(f"    → article: {article_filename(title, date_str)}")
+                total_new += 1
+            else:
+                txt = save_article(course["slug"], title, date_str, detail["paragraphs"])
+                print(f"    → article: {txt.name}")
+                total_new += 1
 
             if args.skip_freqgen:
                 continue
@@ -343,6 +379,7 @@ def main():
             if pack_path.exists() and not args.rebuild:
                 print(f"    → pack exists: {pack_path.name}")
                 total_skipped += 1
+                manifest.add((course["slug"], date_str, title))
             else:
                 if args.dry_run:
                     print(f"    → pack: {pack_path.name}")
@@ -350,6 +387,8 @@ def main():
                     ok = run_freqgen(txt, pack_path, course_slug=course["slug"])
                     if ok:
                         total_packs += 1
+                        # 只有成功打包才记入 manifest，失败下次 run 重试
+                        manifest.add((course["slug"], date_str, title))
                     time.sleep(0.3)
 
     # Save updated manifest
