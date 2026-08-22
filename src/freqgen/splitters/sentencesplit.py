@@ -1,7 +1,5 @@
 """Sentence-boundary splitter — split at . ! ? into complete sentences."""
 
-import re
-
 from .base import SentenceSplitter
 
 
@@ -40,13 +38,7 @@ class SentenceBoundarySplitter(SentenceSplitter):
         text = self._normalize(text)
 
         # Step 2: Find all candidate split positions
-        candidates = []
-        for m in re.finditer(r'(?<=[.!?])\s+(?=[A-Z"])', text):
-            pos = m.start()
-            period_pos = pos - 1
-            if text[period_pos] in '.!?' and self._is_abbrev(text, period_pos):
-                continue
-            candidates.append(pos)
+        candidates = self._find_split_positions(text)
 
         if not candidates:
             return [text]
@@ -60,6 +52,38 @@ class SentenceBoundarySplitter(SentenceSplitter):
 
         parts = [p for p in parts if p]
         return parts if len(parts) > 1 else [text]
+
+    def _find_split_positions(self, text: str) -> list[int]:
+        """Scan for split points: whitespace after sentence-ending punctuation.
+
+        Closing quotes that directly follow the punctuation belong to the
+        sentence being ended, so the split is placed after them — this keeps
+        '"' from being orphaned into the next segment.
+        """
+        candidates = []
+        i = 0
+        while i < len(text):
+            if text[i] not in '.!?':
+                i += 1
+                continue
+            if self._is_abbrev(text, i):
+                i += 1
+                continue
+            j = i + 1
+            # Closing quote(s) directly attached to the sentence
+            while j < len(text) and text[j] == '"':
+                j += 1
+            if j >= len(text) or not text[j].isspace():
+                i += 1
+                continue
+            # New sentence must start with uppercase or an opening quote
+            k = j
+            while k < len(text) and text[k].isspace():
+                k += 1
+            if k < len(text) and (text[k].isupper() or text[k] == '"'):
+                candidates.append(j)
+            i = k
+        return candidates
 
     def _is_abbrev(self, text: str, period_pos: int) -> bool:
         """Check if the period at period_pos is part of a known abbreviation."""
@@ -104,6 +128,7 @@ class SentenceBoundarySplitter(SentenceSplitter):
         E.g. "market.The" -> "market. The"
         But "Dr.Smith" stays (abbreviation).
         "p.m.Please" stays (compound abbreviation).
+        Closing quote stays attached: 'said."Next' -> 'said." Next'
         """
         result = []
         i = 0
@@ -111,10 +136,16 @@ class SentenceBoundarySplitter(SentenceSplitter):
             c = text[i]
             result.append(c)
 
-            if c in '.!?' and i + 1 < len(text):
+            if c in '.!?' and i + 1 < len(text) and not self._is_abbrev(text, i):
                 next_c = text[i + 1]
-                if next_c.isupper() or next_c == '"':
-                    if not self._is_abbrev(text, i):
+                if next_c.isupper():
+                    result.append(' ')
+                elif next_c == '"':
+                    # Keep closing quote attached to the sentence;
+                    # insert the space after the quote instead
+                    result.append('"')
+                    i += 1
+                    if i + 1 < len(text) and not text[i + 1].isspace():
                         result.append(' ')
             i += 1
         return ''.join(result)
